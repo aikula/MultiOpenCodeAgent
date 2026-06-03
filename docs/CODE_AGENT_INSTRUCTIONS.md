@@ -20,6 +20,25 @@ Build a fast working MVP around OpenCode that demonstrates useful manager workfl
 - voice transcription;
 - usage limits.
 
+## Development log rules
+
+During implementation the agent must:
+
+```text
+[ ] Always state which step is being worked on before starting.
+[ ] Keep a dev-log in docs/DEV_LOG.md with:
+    - current step and status;
+    - decisions made and why;
+    - plan for next steps;
+    - errors encountered and how they were resolved.
+[ ] Update the log after every meaningful action or decision.
+[ ] Write errors with enough context to be useful later:
+    - what was attempted;
+    - what went wrong (exact error message);
+    - root cause;
+    - fix applied.
+```
+
 ## Hard rules
 
 ```text
