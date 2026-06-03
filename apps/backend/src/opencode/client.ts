@@ -69,13 +69,13 @@ export class OpenCodeClient {
   }
 
   async health(): Promise<HealthResult> {
-    const res = await this.request('/health')
+    const res = await this.request('/global/health')
     return res.json()
   }
 
   async listAgents(): Promise<AgentInfo[]> {
     try {
-      const res = await this.request('/agents')
+      const res = await this.request('/agent')
       const data = await res.json()
       return Array.isArray(data) ? data : data.agents ?? []
     } catch {
@@ -88,7 +88,7 @@ export class OpenCodeClient {
       const params = new URLSearchParams()
       if (input?.workspacePath) params.set('workspace', input.workspacePath)
       const qs = params.toString()
-      const res = await this.request(`/skills${qs ? `?${qs}` : ''}`)
+      const res = await this.request(`/skill${qs ? `?${qs}` : ''}`)
       const data = await res.json()
       return Array.isArray(data) ? data : data.skills ?? []
     } catch {
@@ -101,7 +101,7 @@ export class OpenCodeClient {
       const params = new URLSearchParams()
       if (input?.workspacePath) params.set('workspace', input.workspacePath)
       const qs = params.toString()
-      const res = await this.request(`/commands${qs ? `?${qs}` : ''}`)
+      const res = await this.request(`/command${qs ? `?${qs}` : ''}`)
       const data = await res.json()
       return Array.isArray(data) ? data : data.commands ?? []
     } catch {
@@ -110,7 +110,7 @@ export class OpenCodeClient {
   }
 
   async createSession(input: { workspacePath: string; title?: string }): Promise<OpenCodeSession> {
-    const res = await this.request('/sessions', {
+    const res = await this.request('/session', {
       method: 'POST',
       body: JSON.stringify({
         workspace: input.workspacePath,
@@ -128,14 +128,12 @@ export class OpenCodeClient {
     model?: string | null
   }): Promise<OpenCodeMessageResult> {
     const body: Record<string, unknown> = {
-      workspace: input.workspacePath,
-      session: input.opencodeSessionId,
-      text: input.text,
+      parts: [{ type: 'text', text: input.text }],
     }
     if (input.agent != null) body.agent = input.agent
     if (input.model != null) body.model = input.model
 
-    const res = await this.request('/sessions/' + input.opencodeSessionId + '/messages', {
+    const res = await this.request(`/session/${input.opencodeSessionId}/message`, {
       method: 'POST',
       body: JSON.stringify(body),
     })
@@ -143,7 +141,7 @@ export class OpenCodeClient {
   }
 
   async forkSession(input: { workspacePath: string; opencodeSessionId: string }): Promise<OpenCodeSession> {
-    const res = await this.request('/sessions/' + input.opencodeSessionId + '/fork', {
+    const res = await this.request(`/session/${input.opencodeSessionId}/fork`, {
       method: 'POST',
       body: JSON.stringify({ workspace: input.workspacePath }),
     })
@@ -151,7 +149,7 @@ export class OpenCodeClient {
   }
 
   async summarizeSession(input: { workspacePath: string; opencodeSessionId: string }): Promise<string> {
-    const res = await this.request('/sessions/' + input.opencodeSessionId + '/summarize', {
+    const res = await this.request(`/session/${input.opencodeSessionId}/summarize`, {
       method: 'POST',
       body: JSON.stringify({ workspace: input.workspacePath }),
     })

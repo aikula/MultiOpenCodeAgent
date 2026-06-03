@@ -1,11 +1,10 @@
 import { eq } from 'drizzle-orm'
 import { v4 as uuid } from 'uuid'
-import { mkdirSync, writeFileSync } from 'fs'
-import { execSync } from 'child_process'
 import { join } from 'path'
 import { db } from '../db/index.js'
 import { workspaces } from '../db/schema.js'
 import { env } from '../env.js'
+import { mkdirAsync, writeFileAsync, execAsync } from '../lib/async-fs.js'
 
 const AGENTS_MD_TEMPLATE = `# User Agent Instructions
 
@@ -47,22 +46,22 @@ export async function createWorkspace(userId: string) {
   const wsPath = join(env.WORKSPACES_ROOT, dirName)
   const now = new Date().toISOString()
 
-  mkdirSync(wsPath, { recursive: true })
-  mkdirSync(join(wsPath, 'memory'), { recursive: true })
-  mkdirSync(join(wsPath, 'uploads'), { recursive: true })
-  mkdirSync(join(wsPath, 'exports'), { recursive: true })
-  mkdirSync(join(wsPath, '.opencode', 'skills'), { recursive: true })
-  mkdirSync(join(wsPath, '.opencode', 'commands'), { recursive: true })
+  await mkdirAsync(wsPath, { recursive: true })
+  await mkdirAsync(join(wsPath, 'memory'), { recursive: true })
+  await mkdirAsync(join(wsPath, 'uploads'), { recursive: true })
+  await mkdirAsync(join(wsPath, 'exports'), { recursive: true })
+  await mkdirAsync(join(wsPath, '.opencode', 'skills'), { recursive: true })
+  await mkdirAsync(join(wsPath, '.opencode', 'commands'), { recursive: true })
 
-  writeFileSync(join(wsPath, 'AGENTS.md'), AGENTS_MD_TEMPLATE)
-  writeFileSync(join(wsPath, 'opencode.json'), JSON.stringify({}, null, 2))
-  writeFileSync(join(wsPath, 'memory', 'profile.md'), '')
-  writeFileSync(join(wsPath, 'memory', 'facts.md'), '')
-  writeFileSync(join(wsPath, 'memory', 'preferences.md'), '')
+  await writeFileAsync(join(wsPath, 'AGENTS.md'), AGENTS_MD_TEMPLATE)
+  await writeFileAsync(join(wsPath, 'opencode.json'), JSON.stringify({}, null, 2))
+  await writeFileAsync(join(wsPath, 'memory', 'profile.md'), '')
+  await writeFileAsync(join(wsPath, 'memory', 'facts.md'), '')
+  await writeFileAsync(join(wsPath, 'memory', 'preferences.md'), '')
 
-  execSync('git init', { cwd: wsPath, stdio: 'pipe' })
-  execSync('git add -A', { cwd: wsPath, stdio: 'pipe' })
-  execSync('git commit -m "Initial workspace"', { cwd: wsPath, stdio: 'pipe' })
+  await execAsync('git', ['init'], wsPath)
+  await execAsync('git', ['add', '-A'], wsPath)
+  await execAsync('git', ['-c', 'user.name=MultiOpenCodeAgent', '-c', 'user.email=system@moca.local', 'commit', '-m', 'Initial workspace'], wsPath)
 
   db.insert(workspaces).values({
     id,

@@ -70,7 +70,7 @@ export async function runMigrations() {
     )
   `)
 
-  // FTS5 virtual table — use raw sqlite since drizzle doesn't handle VIRTUAL TABLE
+  // FTS5 virtual table
   const ftsExists = sqlite.prepare(
     "SELECT name FROM sqlite_master WHERE type='table' AND name='messages_fts'"
   ).get()
@@ -78,6 +78,45 @@ export async function runMigrations() {
     sqlite.exec(`
       CREATE VIRTUAL TABLE messages_fts
       USING fts5(content, user_id, session_id, content='messages', content_rowid='rowid')
+    `)
+  }
+
+  // FTS sync triggers
+  const triggerInsert = sqlite.prepare(
+    "SELECT name FROM sqlite_master WHERE type='trigger' AND name='messages_fts_insert'"
+  ).get()
+  if (!triggerInsert) {
+    sqlite.exec(`
+      CREATE TRIGGER messages_fts_insert AFTER INSERT ON messages BEGIN
+        INSERT INTO messages_fts(rowid, content, user_id, session_id)
+        VALUES (new.rowid, new.content, new.user_id, new.session_id);
+      END
+    `)
+  }
+
+  const triggerDelete = sqlite.prepare(
+    "SELECT name FROM sqlite_master WHERE type='trigger' AND name='messages_fts_delete'"
+  ).get()
+  if (!triggerDelete) {
+    sqlite.exec(`
+      CREATE TRIGGER messages_fts_delete AFTER DELETE ON messages BEGIN
+        INSERT INTO messages_fts(messages_fts, rowid, content, user_id, session_id)
+        VALUES ('delete', old.rowid, old.content, old.user_id, old.session_id);
+      END
+    `)
+  }
+
+  const triggerUpdate = sqlite.prepare(
+    "SELECT name FROM sqlite_master WHERE type='trigger' AND name='messages_fts_update'"
+  ).get()
+  if (!triggerUpdate) {
+    sqlite.exec(`
+      CREATE TRIGGER messages_fts_update AFTER UPDATE ON messages BEGIN
+        INSERT INTO messages_fts(messages_fts, rowid, content, user_id, session_id)
+        VALUES ('delete', old.rowid, old.content, old.user_id, old.session_id);
+        INSERT INTO messages_fts(rowid, content, user_id, session_id)
+        VALUES (new.rowid, new.content, new.user_id, new.session_id);
+      END
     `)
   }
 
@@ -161,6 +200,28 @@ export async function runMigrations() {
       scan_report_json TEXT,
       created_at TEXT NOT NULL,
       updated_at TEXT NOT NULL
+    )
+  `)
+
+  db.run(sql`
+    CREATE TABLE IF NOT EXISTS marketplace_skills_content (
+      id TEXT PRIMARY KEY,
+      marketplace_skill_id TEXT NOT NULL REFERENCES marketplace_skills(id),
+      content TEXT NOT NULL,
+      sha256 TEXT NOT NULL,
+      created_at TEXT NOT NULL
+    )
+  `)
+
+  db.run(sql`
+    CREATE TABLE IF NOT EXISTS audit_log (
+      id TEXT PRIMARY KEY,
+      actor_user_id TEXT,
+      action TEXT NOT NULL,
+      target_type TEXT,
+      target_id TEXT,
+      metadata_json TEXT,
+      created_at TEXT NOT NULL
     )
   `)
 

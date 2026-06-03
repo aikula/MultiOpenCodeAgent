@@ -25,7 +25,7 @@ export async function searchRoutes(app: FastifyInstance) {
           LIMIT 50
         `).all(`"${ftsQuery}"`, request.user.userId)
 
-        for (const row of rows as any[]) {
+        for (const row of rows as Array<{ id: string; content: string | null; created_at: string }>) {
           results.push({ type: 'message', id: row.id, content: row.content ?? '', createdAt: row.created_at })
         }
       } catch {

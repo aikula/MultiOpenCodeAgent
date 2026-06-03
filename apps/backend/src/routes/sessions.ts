@@ -5,7 +5,14 @@ import { db } from '../db/index.js'
 import { sessions, messages, workspaces } from '../db/schema.js'
 import { opencodeClient } from '../opencode/client.js'
 import { getWorkspace } from '../services/workspace.js'
+import { getBalance, chargeQuota } from '../services/quota.js'
 import { sendMessageSchema } from '@moca/shared/validation'
+import { env } from '../env.js'
+
+async function createOpenCodeSession(workspacePath: string, title?: string): Promise<string> {
+  const ocSession = await opencodeClient.createSession({ workspacePath, title })
+  return ocSession.id
+}
 
 export async function sessionRoutes(app: FastifyInstance) {
   app.get('/api/sessions', {
@@ -20,22 +27,23 @@ export async function sessionRoutes(app: FastifyInstance) {
 
   app.post('/api/sessions', {
     preHandler: [app.authenticate],
-  }, async (request) => {
+  }, async (request, reply) => {
     const ws = getWorkspace(request.user.userId)
-    if (!ws) return { error: 'No workspace' }
+    if (!ws) return reply.status(400).send({ error: 'No workspace' })
 
     const now = new Date().toISOString()
     const id = uuid()
+    const title = (request.body as { title?: string })?.title ?? 'New session'
 
     let opencodeSessionId: string
     try {
-      const ocSession = await opencodeClient.createSession({
-        workspacePath: ws.path,
-        title: (request.body as any)?.title,
-      })
-      opencodeSessionId = ocSession.id
-    } catch (err) {
-      opencodeSessionId = `local-${id}`
+      opencodeSessionId = await createOpenCodeSession(ws.path, title)
+    } catch (err: any) {
+      if (env.ALLOW_LOCAL_OPENCODE_FALLBACK) {
+        opencodeSessionId = `local-${id}`
+      } else {
+        return reply.status(503).send({ error: `OpenCode unavailable: ${err.message}` })
+      }
     }
 
     db.insert(sessions).values({
@@ -43,7 +51,7 @@ export async function sessionRoutes(app: FastifyInstance) {
       userId: request.user.userId,
       workspaceId: ws.id,
       opencodeSessionId,
-      title: (request.body as any)?.title ?? 'New session',
+      title,
       isMain: false,
       source: 'web',
       status: 'active',
@@ -51,7 +59,7 @@ export async function sessionRoutes(app: FastifyInstance) {
       updatedAt: now,
     }).run()
 
-    return { id, opencodeSessionId, title: (request.body as any)?.title ?? 'New session' }
+    return { id, opencodeSessionId, title }
   })
 
   app.get('/api/sessions/:id/messages', {
@@ -82,6 +90,12 @@ export async function sessionRoutes(app: FastifyInstance) {
     const ws = getWorkspace(request.user.userId)
     if (!ws) return reply.status(400).send({ error: 'No workspace' })
 
+    // Quota check
+    const balance = getBalance(request.user.userId)
+    if (balance <= 0) {
+      return reply.status(429).send({ error: 'Quota exceeded' })
+    }
+
     const msgId = uuid()
     const now = new Date().toISOString()
 
@@ -95,6 +109,9 @@ export async function sessionRoutes(app: FastifyInstance) {
       createdAt: now,
     }).run()
 
+    // Charge quota before calling OpenCode
+    chargeQuota(request.user.userId, 1, 'web_message')
+
     let assistantContent = ''
     let ocMessageId: string | null = null
 
@@ -107,7 +124,9 @@ export async function sessionRoutes(app: FastifyInstance) {
       assistantContent = result.content
       ocMessageId = result.messageId
     } catch (err: any) {
-      assistantContent = `OpenCode unavailable: ${err.message}`
+      assistantContent = `OpenCode error: ${err.message}`
+      // Refund on OpenCode failure
+      chargeQuota(request.user.userId, -1, 'refund_opencode_error')
     }
 
     const assistantId = uuid()
@@ -149,7 +168,7 @@ export async function sessionRoutes(app: FastifyInstance) {
 
   app.post('/api/sessions/:id/fork', {
     preHandler: [app.authenticate],
-  }, async (request) => {
+  }, async (request, reply) => {
     const { id } = request.params as { id: string }
     const session = db.select().from(sessions).where(eq(sessions.id, id)).get()
     if (!session || session.userId !== request.user.userId) {
@@ -169,8 +188,12 @@ export async function sessionRoutes(app: FastifyInstance) {
         opencodeSessionId: session.opencodeSessionId,
       })
       newOcId = forked.id
-    } catch {
-      newOcId = `local-${newId}`
+    } catch (err: any) {
+      if (env.ALLOW_LOCAL_OPENCODE_FALLBACK) {
+        newOcId = `local-${newId}`
+      } else {
+        return reply.status(503).send({ error: `OpenCode unavailable: ${err.message}` })
+      }
     }
 
     db.insert(sessions).values({

@@ -2,12 +2,13 @@ import { Telegraf, type Context } from 'telegraf'
 import { eq } from 'drizzle-orm'
 import { v4 as uuid } from 'uuid'
 import { db } from '../db/index.js'
-import { users, telegramLinks, sessions, messages, workspaces } from '../db/schema.js'
+import { users, telegramLinks, sessions, messages, workspaces, reminders, auditLog } from '../db/schema.js'
 import { getWorkspace } from '../services/workspace.js'
 import { opencodeClient } from '../opencode/client.js'
 import { chargeQuota, getBalance } from '../services/quota.js'
 import { env } from '../env.js'
 import { consumeLoginCode } from '../routes/auth.js'
+import { writeFileAsync, mkdirAsync } from '../lib/async-fs.js'
 
 let bot: Telegraf | null = null
 
@@ -32,10 +33,10 @@ function getMainSession(userId: string) {
     .find(s => s.isMain && s.status === 'active')
 }
 
-async function sendToSession(user: any, text: string, ctx: Context) {
+async function sendToSession(user: { id: string; defaultAgent: string | null; defaultModel: string | null }, text: string, ctx: Context) {
   const session = getMainSession(user.id)
   if (!session) {
-    await ctx.reply('No main session found. Create one via Web UI first.')
+    await ctx.reply('No main session found. Create one via /new or Web UI first.')
     return
   }
 
@@ -64,6 +65,9 @@ async function sendToSession(user: any, text: string, ctx: Context) {
     createdAt: now,
   }).run()
 
+  // Charge quota before calling OpenCode
+  chargeQuota(user.id, 1, 'telegram_message')
+
   let assistantContent = ''
   try {
     const result = await opencodeClient.sendMessage({
@@ -76,6 +80,7 @@ async function sendToSession(user: any, text: string, ctx: Context) {
     assistantContent = result.content
   } catch (err: any) {
     assistantContent = `OpenCode error: ${err.message}`
+    chargeQuota(user.id, -1, 'refund_opencode_error')
   }
 
   const assistantId = uuid()
@@ -89,9 +94,56 @@ async function sendToSession(user: any, text: string, ctx: Context) {
     createdAt: new Date().toISOString(),
   }).run()
 
-  chargeQuota(user.id, 1, 'telegram_message')
-
   await ctx.reply(assistantContent)
+}
+
+function parseReminderText(text: string): { title: string; remindAt: Date } | null {
+  const tz = env.DEFAULT_TIMEZONE
+  const now = new Date()
+
+  // /remind 2026-06-04 10:00 write Ivan about contract
+  const fullDateMatch = text.match(/^(\d{4}-\d{2}-\d{2})\s+(\d{1,2}:\d{2})\s+(.+)$/)
+  if (fullDateMatch) {
+    const date = new Date(`${fullDateMatch[1]}T${fullDateMatch[2]}:00`)
+    if (!isNaN(date.getTime())) {
+      return { remindAt: date, title: fullDateMatch[3] }
+    }
+  }
+
+  // /remind tomorrow 10:00 write Ivan about contract
+  const tomorrowMatch = text.match(/^tomorrow\s+(\d{1,2}:\d{2})\s+(.+)$/i)
+  if (tomorrowMatch) {
+    const tomorrow = new Date(now)
+    tomorrow.setDate(tomorrow.getDate() + 1)
+    const [h, m] = tomorrowMatch[1].split(':').map(Number)
+    tomorrow.setHours(h, m, 0, 0)
+    return { remindAt: tomorrow, title: tomorrowMatch[2] }
+  }
+
+  // /remind today 18:30 check report
+  const todayMatch = text.match(/^today\s+(\d{1,2}:\d{2})\s+(.+)$/i)
+  if (todayMatch) {
+    const date = new Date(now)
+    const [h, m] = todayMatch[1].split(':').map(Number)
+    date.setHours(h, m, 0, 0)
+    return { remindAt: date, title: todayMatch[2] }
+  }
+
+  // /remind in 30m call back
+  const inMinutesMatch = text.match(/^in\s+(\d+)m\s+(.+)$/i)
+  if (inMinutesMatch) {
+    const date = new Date(now.getTime() + parseInt(inMinutesMatch[1]) * 60_000)
+    return { remindAt: date, title: inMinutesMatch[2] }
+  }
+
+  // /remind in 2h prepare meeting plan
+  const inHoursMatch = text.match(/^in\s+(\d+)h\s+(.+)$/i)
+  if (inHoursMatch) {
+    const date = new Date(now.getTime() + parseInt(inHoursMatch[1]) * 3600_000)
+    return { remindAt: date, title: inHoursMatch[2] }
+  }
+
+  return null
 }
 
 export function startTelegramBot(): Telegraf | null {
@@ -140,6 +192,16 @@ export function startTelegramBot(): Telegraf | null {
       isActive: true,
     }).run()
 
+    db.insert(auditLog).values({
+      id: uuid(),
+      actorUserId: userId,
+      action: 'telegram_linked',
+      targetType: 'user',
+      targetId: userId,
+      metadataJson: JSON.stringify({ telegramUserId: String(ctx.from?.id) }),
+      createdAt: new Date().toISOString(),
+    }).run()
+
     await ctx.reply(`Linked to ${user?.email ?? 'account'}. You can now chat!`)
   })
 
@@ -174,7 +236,22 @@ export function startTelegramBot(): Telegraf | null {
     const title = ctx.message?.text?.split(' ').slice(1).join(' ') || 'New session'
     const id = uuid()
     const now = new Date().toISOString()
-    const ocId = `local-${id}`
+
+    let ocId: string
+    try {
+      const ocSession = await opencodeClient.createSession({
+        workspacePath: ws.path,
+        title,
+      })
+      ocId = ocSession.id
+    } catch (err: any) {
+      if (env.ALLOW_LOCAL_OPENCODE_FALLBACK) {
+        ocId = `local-${id}`
+      } else {
+        await ctx.reply(`Failed to create OpenCode session: ${err.message}`)
+        return
+      }
+    }
 
     db.insert(sessions).values({
       id,
@@ -217,9 +294,52 @@ export function startTelegramBot(): Telegraf | null {
     if (!user) { await ctx.reply('Not linked.'); return }
 
     const text = ctx.message?.text?.split(' ').slice(1).join(' ')
-    if (!text) { await ctx.reply('Usage: /remind <text>'); return }
+    if (!text) {
+      await ctx.reply(
+        'Usage:\n' +
+        '/remind 2026-06-04 10:00 write Ivan about contract\n' +
+        '/remind tomorrow 10:00 write Ivan about contract\n' +
+        '/remind today 18:30 check report\n' +
+        '/remind in 30m call back\n' +
+        '/remind in 2h prepare meeting plan'
+      )
+      return
+    }
 
-    await ctx.reply(`Reminder noted: "${text}". Use Web UI for full reminder management.`)
+    const parsed = parseReminderText(text)
+    if (!parsed) {
+      await ctx.reply(
+        'Could not parse reminder. Supported formats:\n' +
+        '/remind 2026-06-04 10:00 <title>\n' +
+        '/remind tomorrow 10:00 <title>\n' +
+        '/remind today 18:30 <title>\n' +
+        '/remind in 30m <title>\n' +
+        '/remind in 2h <title>'
+      )
+      return
+    }
+
+    const id = uuid()
+    const now = new Date().toISOString()
+
+    db.insert(reminders).values({
+      id,
+      userId: user.id,
+      title: parsed.title,
+      remindAt: parsed.remindAt.toISOString(),
+      timezone: env.DEFAULT_TIMEZONE,
+      channel: 'telegram',
+      status: 'scheduled',
+      createdAt: now,
+    }).run()
+
+    await ctx.reply(
+      `Reminder created:\n` +
+      `  Title: ${parsed.title}\n` +
+      `  At: ${parsed.remindAt.toISOString()}\n` +
+      `  Timezone: ${env.DEFAULT_TIMEZONE}\n` +
+      `  Channel: telegram`
+    )
   })
 
   bot.command('help', async (ctx) => {
@@ -231,7 +351,7 @@ export function startTelegramBot(): Telegraf | null {
       '/use <number> — Switch session by number\n' +
       '/main — Show main session\n' +
       '/limits — Show quota balance\n' +
-      '/remind <text> — Quick reminder\n' +
+      '/remind <when> <text> — Create reminder\n' +
       '/calendar — Today\'s events\n' +
       '/settings — Show your settings\n' +
       '/help — This message\n\n' +
@@ -320,17 +440,16 @@ export function startTelegramBot(): Telegraf | null {
       const response = await fetch(fileLink.toString())
       const audioBuffer = Buffer.from(await response.arrayBuffer())
 
-      // Save to workspace
       const ws = getWorkspace(user.id)
       if (!ws) { await ctx.reply('No workspace.'); return }
 
-      const { writeFileSync } = await import('fs')
       const { join } = await import('path')
+      const uploadDir = join(ws.path, 'uploads')
+      await mkdirAsync(uploadDir, { recursive: true })
       const filename = `voice_${Date.now()}.ogg`
-      const filepath = join(ws.path, 'uploads', filename)
-      writeFileSync(filepath, audioBuffer)
+      const filepath = join(uploadDir, filename)
+      await writeFileAsync(filepath, audioBuffer)
 
-      // Send to STT
       const sttResponse = await fetch(env.STT_BASE_URL, {
         method: 'POST',
         headers: {

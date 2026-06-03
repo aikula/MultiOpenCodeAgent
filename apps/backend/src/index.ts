@@ -22,7 +22,19 @@ import { sql } from 'drizzle-orm'
 
 const app = Fastify({ logger: true })
 
-await app.register(cors, { origin: true })
+// CORS configuration
+if (env.NODE_ENV === 'production') {
+  if (!env.CORS_ORIGINS) {
+    console.error('CORS_ORIGINS is required in production')
+    process.exit(1)
+  }
+  const origins = env.CORS_ORIGINS.split(',').map(s => s.trim()).filter(Boolean)
+  await app.register(cors, { origin: origins, credentials: true })
+} else {
+  const origins = env.CORS_ORIGINS.split(',').map(s => s.trim()).filter(Boolean)
+  await app.register(cors, { origin: origins, credentials: true })
+}
+
 await app.register(jwt, { secret: env.JWT_SECRET })
 
 await runMigrations()

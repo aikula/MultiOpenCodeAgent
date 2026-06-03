@@ -1,20 +1,21 @@
 import type { FastifyInstance } from 'fastify'
-import { readdirSync, readFileSync } from 'fs'
 import { join, dirname } from 'path'
 import { fileURLToPath } from 'url'
 import { opencodeClient } from '../opencode/client.js'
 import { getWorkspace } from '../services/workspace.js'
 import { authMiddleware } from '../middleware/auth.js'
+import { readFileAsync, readdirAsync } from '../lib/async-fs.js'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const skillsDir = join(__dirname, '..', 'skills')
 
-function loadCentralSkills(): Array<{ slug: string; name: string; description: string; content: string }> {
+async function loadCentralSkills(): Promise<Array<{ slug: string; name: string; description: string; content: string }>> {
   try {
-    const dirs = readdirSync(skillsDir, { withFileTypes: true }).filter(d => d.isDirectory())
-    return dirs.map(d => {
+    const dirs = (await readdirAsync(skillsDir, { withFileTypes: true })).filter(d => d.isDirectory())
+    const results: Array<{ slug: string; name: string; description: string; content: string }> = []
+    for (const d of dirs) {
       try {
-        const content = readFileSync(join(skillsDir, d.name, 'SKILL.md'), 'utf-8')
+        const content = await readFileAsync(join(skillsDir, d.name, 'SKILL.md'))
         const frontmatter = content.match(/^---\n([\s\S]*?)\n---/)
         let name = d.name, description = ''
         if (frontmatter) {
@@ -23,9 +24,10 @@ function loadCentralSkills(): Array<{ slug: string; name: string; description: s
             if (line.startsWith('description:')) description = line.slice(12).trim()
           }
         }
-        return { slug: d.name, name, description, content }
-      } catch { return null }
-    }).filter(Boolean) as any[]
+        results.push({ slug: d.name, name, description, content })
+      } catch { /* skip invalid */ }
+    }
+    return results
   } catch { return [] }
 }
 
@@ -74,24 +76,23 @@ export async function opencodeRoutes(app: FastifyInstance) {
     }
   })
 
-  // Central skills (built-in demo skills)
   app.get('/api/opencode/central-skills', {
     preHandler: [authMiddleware],
   }, async () => {
-    return loadCentralSkills().map(s => ({ slug: s.slug, name: s.name, description: s.description, source: 'central' }))
+    const skills = await loadCentralSkills()
+    return skills.map(s => ({ slug: s.slug, name: s.name, description: s.description, source: 'central' }))
   })
 
   app.get('/api/opencode/central-skills/:slug', {
     preHandler: [authMiddleware],
   }, async (request) => {
     const { slug } = request.params as { slug: string }
-    const skills = loadCentralSkills()
+    const skills = await loadCentralSkills()
     const skill = skills.find(s => s.slug === slug)
     if (!skill) return { error: 'Not found' }
     return skill
   })
 
-  // Manager demo commands
   const DEMO_COMMANDS = [
     { name: 'daily-plan', description: 'Create a structured daily plan from your tasks and priorities' },
     { name: 'meeting-brief', description: 'Prepare a concise brief from meeting notes or transcript' },

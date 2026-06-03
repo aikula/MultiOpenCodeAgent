@@ -1,4 +1,3 @@
-import type { SkillScanResult, SkillScanStatus } from './scanner.js'
 
 const UNSAFE_PATTERNS: Array<{ pattern: RegExp; severity: 'low' | 'medium' | 'high' | 'critical'; code: string; message: string }> = [
   { pattern: /curl\s+\|\s*sh|wget\s+\|\s*sh/, severity: 'critical', code: 'pipe_to_shell', message: 'Skill contains pipe-to-shell command.' },

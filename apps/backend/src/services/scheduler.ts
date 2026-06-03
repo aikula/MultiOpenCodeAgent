@@ -2,11 +2,12 @@ import { eq, sql as drizzleSql } from 'drizzle-orm'
 import { v4 as uuid } from 'uuid'
 import { db } from '../db/index.js'
 import { reminders, users, quotaLedger, telegramLinks } from '../db/schema.js'
+import { getBalance } from './quota.js'
 import { env } from '../env.js'
 
-let telegramBot: any = null
+let telegramBot: InstanceType<typeof import('telegraf').Telegraf> | null = null
 
-export function setTelegramBot(bot: any) {
+export function setTelegramBot(bot: InstanceType<typeof import('telegraf').Telegraf>) {
   telegramBot = bot
 }
 
@@ -65,16 +66,20 @@ export function startScheduler() {
           .where(drizzleSql`${quotaLedger.userId} = ${user.id} AND ${quotaLedger.reason} = 'daily_refill' AND ${quotaLedger.createdAt} >= ${todayStart}`)
           .get()
 
-        if (!existing) {
-          db.insert(quotaLedger).values({
-            id: uuid(),
-            userId: user.id,
-            delta: limit,
-            reason: 'daily_refill',
-            metadataJson: JSON.stringify({ date: today }),
-            createdAt: new Date().toISOString(),
-          }).run()
-        }
+        if (existing) continue
+
+        const balance = getBalance(user.id)
+        const delta = Math.max(0, limit - balance)
+        if (delta <= 0) continue
+
+        db.insert(quotaLedger).values({
+          id: uuid(),
+          userId: user.id,
+          delta,
+          reason: 'daily_refill',
+          metadataJson: JSON.stringify({ date: today, balanceBefore: balance }),
+          createdAt: new Date().toISOString(),
+        }).run()
       }
     } catch (err) {
       console.error('Quota refill error:', err)

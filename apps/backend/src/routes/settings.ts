@@ -1,11 +1,13 @@
 import type { FastifyInstance } from 'fastify'
 import { eq } from 'drizzle-orm'
-import { readFileSync, writeFileSync } from 'fs'
 import { join } from 'path'
 import { db } from '../db/index.js'
 import { users } from '../db/schema.js'
 import { getWorkspace } from '../services/workspace.js'
+import { readFileAsync, writeFileAsync, commitToWorkspace } from '../lib/async-fs.js'
 import { updateSettingsSchema } from '@moca/shared/validation'
+
+const MAX_AGENTS_MD_SIZE = 100_000
 
 export async function settingsRoutes(app: FastifyInstance) {
   app.get('/api/me/settings', {
@@ -45,7 +47,7 @@ export async function settingsRoutes(app: FastifyInstance) {
     if (!ws) return { error: 'No workspace' }
 
     try {
-      const content = readFileSync(join(ws.path, 'AGENTS.md'), 'utf-8')
+      const content = await readFileAsync(join(ws.path, 'AGENTS.md'))
       return { content }
     } catch {
       return { content: '' }
@@ -54,12 +56,21 @@ export async function settingsRoutes(app: FastifyInstance) {
 
   app.put('/api/me/agents-md', {
     preHandler: [app.authenticate],
-  }, async (request) => {
+  }, async (request, reply) => {
     const { content } = request.body as { content: string }
-    const ws = getWorkspace(request.user.userId)
-    if (!ws) return { error: 'No workspace' }
+    if (!content || content.trim().length === 0) {
+      return reply.status(400).send({ error: 'AGENTS.md cannot be empty' })
+    }
+    if (content.length > MAX_AGENTS_MD_SIZE) {
+      return reply.status(400).send({ error: `AGENTS.md exceeds max size of ${MAX_AGENTS_MD_SIZE} bytes` })
+    }
 
-    writeFileSync(join(ws.path, 'AGENTS.md'), content)
+    const ws = getWorkspace(request.user.userId)
+    if (!ws) return reply.status(400).send({ error: 'No workspace' })
+
+    await writeFileAsync(join(ws.path, 'AGENTS.md'), content)
+    await commitToWorkspace(ws.path, 'Update AGENTS.md')
+
     return { ok: true }
   })
 }

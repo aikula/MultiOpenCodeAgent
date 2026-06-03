@@ -129,6 +129,24 @@ export const marketplaceSkills = sqliteTable('marketplace_skills', {
   updatedAt: text('updated_at').notNull(),
 })
 
+export const marketplaceSkillsContent = sqliteTable('marketplace_skills_content', {
+  id: text('id').primaryKey(),
+  marketplaceSkillId: text('marketplace_skill_id').notNull().references(() => marketplaceSkills.id),
+  content: text('content').notNull(),
+  sha256: text('sha256').notNull(),
+  createdAt: text('created_at').notNull(),
+})
+
+export const auditLog = sqliteTable('audit_log', {
+  id: text('id').primaryKey(),
+  actorUserId: text('actor_user_id'),
+  action: text('action').notNull(),
+  targetType: text('target_type'),
+  targetId: text('target_id'),
+  metadataJson: text('metadata_json'),
+  createdAt: text('created_at').notNull(),
+})
+
 export const userInstalledSkills = sqliteTable('user_installed_skills', {
   id: text('id').primaryKey(),
   userId: text('user_id').notNull().references(() => users.id),

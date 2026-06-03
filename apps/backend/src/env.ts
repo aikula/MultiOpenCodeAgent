@@ -14,9 +14,16 @@ const envSchema = z.object({
   OPENCODE_SERVER_USERNAME: z.string().default('opencode'),
   OPENCODE_SERVER_PASSWORD: z.string().min(1, 'OPENCODE_SERVER_PASSWORD is required'),
 
+  ALLOW_LOCAL_OPENCODE_FALLBACK: z
+    .enum(['true', 'false'])
+    .transform(v => v === 'true')
+    .default('false'),
+
   TELEGRAM_BOT_TOKEN: z.string().optional(),
   STT_BASE_URL: z.string().optional(),
   STT_API_KEY: z.string().optional(),
+
+  CORS_ORIGINS: z.string().default('http://localhost:5173'),
 
   DEFAULT_TIMEZONE: z.string().default('Europe/Vilnius'),
   DAILY_QUOTA_LIMIT: z.coerce.number().default(20),

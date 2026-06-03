@@ -4,11 +4,12 @@ import { v4 as uuid } from 'uuid'
 import { randomBytes } from 'crypto'
 import { registerUser, loginUser, generateToken } from '../services/auth.js'
 import { createWorkspace } from '../services/workspace.js'
-import { grantWelcomeQuota } from '../services/quota.js'
+import { grantWelcomeQuota, getBalance } from '../services/quota.js'
 import { db } from '../db/index.js'
-import { sessions, workspaces, users } from '../db/schema.js'
+import { sessions, workspaces, users, auditLog } from '../db/schema.js'
 import { registerSchema, loginSchema } from '@moca/shared/validation'
 import { opencodeClient } from '../opencode/client.js'
+import { env } from '../env.js'
 
 const loginCodes = new Map<string, { userId: string; expiresAt: number }>()
 
@@ -45,7 +46,11 @@ async function createMainSession(userId: string, workspacePath: string) {
     })
     ocSessionId = oc.id
   } catch {
-    ocSessionId = `local-${id}`
+    if (env.ALLOW_LOCAL_OPENCODE_FALLBACK) {
+      ocSessionId = `local-${id}`
+    } else {
+      throw new Error('OpenCode unavailable, cannot create main session')
+    }
   }
 
   const ws = db.select().from(workspaces).where(eq(workspaces.userId, userId)).get()
@@ -72,7 +77,23 @@ export async function authRoutes(app: FastifyInstance) {
 
     const ws = await createWorkspace(user.id)
     grantWelcomeQuota(user.id)
-    await createMainSession(user.id, ws.path)
+
+    try {
+      await createMainSession(user.id, ws.path)
+    } catch (err: any) {
+      // Registration succeeds but main session may not be created
+      // User can create sessions later when OpenCode is available
+      console.error('Failed to create main session:', err.message)
+    }
+
+    db.insert(auditLog).values({
+      id: uuid(),
+      actorUserId: user.id,
+      action: 'user_registered',
+      targetType: 'user',
+      targetId: user.id,
+      createdAt: new Date().toISOString(),
+    }).run()
 
     const token = generateToken(app, {
       userId: user.id,
@@ -86,6 +107,15 @@ export async function authRoutes(app: FastifyInstance) {
   app.post('/api/auth/login', async (request, reply) => {
     const body = loginSchema.parse(request.body)
     const result = await loginUser(body.email, body.password)
+
+    db.insert(auditLog).values({
+      id: uuid(),
+      actorUserId: result.userId,
+      action: 'login_success',
+      targetType: 'user',
+      targetId: result.userId,
+      createdAt: new Date().toISOString(),
+    }).run()
 
     const token = generateToken(app, {
       userId: result.userId,
@@ -107,7 +137,6 @@ export async function authRoutes(app: FastifyInstance) {
   app.post('/api/auth/logout', {
     preHandler: [app.authenticate],
   }, async (request, reply) => {
-    // JWT is stateless — client discards token. Mark for future token blacklisting.
     return { ok: true }
   })
 
@@ -130,5 +159,19 @@ export async function authRoutes(app: FastifyInstance) {
   }, async (request) => {
     const code = getLoginCode(request.user.userId)
     return { code }
+  })
+
+  app.get('/api/me/limits', {
+    preHandler: [app.authenticate],
+  }, async (request) => {
+    const balance = getBalance(request.user.userId)
+    const user = db.select({ dailyQuotaLimit: users.dailyQuotaLimit })
+      .from(users)
+      .where(eq(users.id, request.user.userId))
+      .get()
+    return {
+      balance,
+      dailyLimit: user?.dailyQuotaLimit ?? env.DAILY_QUOTA_LIMIT,
+    }
   })
 }

@@ -5,7 +5,8 @@
     "rootDir": "src",
     "types": ["node"],
     "paths": {
-      "@moca/shared": ["../../packages/shared/src"]
+      "@moca/shared": ["../../packages/shared/src"],
+      "@moca/shared/*": ["../../packages/shared/src/*"]
     }
   },
   "include": ["src"],
