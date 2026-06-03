@@ -20,7 +20,7 @@ const envSchema = z.object({
     .default('false'),
 
   TELEGRAM_BOT_TOKEN: z.string().optional(),
-  STT_BASE_URL: z.string().optional(),
+  STT_API_URL: z.string().optional(),
   STT_API_KEY: z.string().optional(),
 
   CORS_ORIGINS: z.string().default('http://localhost:5173'),

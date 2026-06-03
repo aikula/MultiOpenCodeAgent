@@ -430,7 +430,7 @@ export function startTelegramBot(): Telegraf | null {
     const user = getUserByTelegramId(String(ctx.from?.id))
     if (!user) { await ctx.reply('Not linked.'); return }
 
-    if (!env.STT_BASE_URL) {
+    if (!env.STT_API_URL) {
       await ctx.reply('Voice transcription not configured.')
       return
     }
@@ -450,16 +450,9 @@ export function startTelegramBot(): Telegraf | null {
       const filepath = join(uploadDir, filename)
       await writeFileAsync(filepath, audioBuffer)
 
-      const sttResponse = await fetch(env.STT_BASE_URL, {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${env.STT_API_KEY}`,
-          'Content-Type': 'audio/ogg',
-        },
-        body: audioBuffer,
-      })
-      const sttData = await sttResponse.json() as { text?: string }
-      const transcript = sttData.text || '(no transcript)'
+      const { transcribeAudio } = await import('../services/stt.js')
+      const result = await transcribeAudio(audioBuffer, filename)
+      const transcript = result.text || '(no transcript)'
 
       await ctx.reply(`Transcript: ${transcript}`)
       await sendToSession(user, transcript, ctx)
