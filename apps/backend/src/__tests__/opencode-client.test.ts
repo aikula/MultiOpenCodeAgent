@@ -46,7 +46,7 @@ describe('OpenCodeClient', () => {
     expect(result).toEqual([{ id: 'coder', title: 'Coder' }])
   })
 
-  it('listSkills() calls GET /skill (singular)', async () => {
+  it('listSkills() calls GET /command (OpenCode API route)', async () => {
     mockFetch.mockResolvedValue({
       ok: true,
       json: () => Promise.resolve([]),
@@ -55,7 +55,7 @@ describe('OpenCodeClient', () => {
     await client.listSkills({ workspacePath: '/ws' })
 
     expect(mockFetch).toHaveBeenCalledWith(
-      expect.stringContaining('/skill?'),
+      expect.stringContaining('/command'),
       expect.any(Object)
     )
   })
@@ -69,7 +69,7 @@ describe('OpenCodeClient', () => {
     await client.listCommands({ workspacePath: '/ws' })
 
     expect(mockFetch).toHaveBeenCalledWith(
-      expect.stringContaining('/command?'),
+      expect.stringContaining('/command'),
       expect.any(Object)
     )
   })
