@@ -7,6 +7,7 @@ RUN curl -fsSL https://opencode.ai/install | bash
 WORKDIR /workspace
 
 COPY apps/opencode/opencode.json /root/.config/opencode/opencode.json
+COPY apps/opencode/auth.json /root/.local/share/opencode/auth.json
 
 RUN git config --global user.email "moca@local" && git config --global user.name "MOCA"
 

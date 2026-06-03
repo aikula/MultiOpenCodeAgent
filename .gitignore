@@ -7,3 +7,4 @@ dist/
 *.db-wal
 .DS_Store
 apps/frontend/dist/
+apps/opencode/auth.json
