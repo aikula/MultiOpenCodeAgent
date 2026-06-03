@@ -133,3 +133,68 @@ All spec gaps addressed:
 **21/21 smoke tests passing.**
 All stages 0–13 from IMPLEMENTATION_PLAN.md have corresponding implementations.
 All Definition of Done items from DEVELOPMENT_SPEC.md are addressed.
+
+---
+
+## Session: 2026-06-03 (Review Fix Batch)
+
+### Review fix specification applied
+
+Reference: `docs/REVIEW_FIX_SPEC.md`
+
+All P0 and P1 items from the review have been addressed:
+
+#### P0 blockers fixed
+
+1. **OpenCode API endpoint mapping**: Changed from plural endpoints (`/agents`, `/skills`, `/commands`, `/sessions`) to singular OpenCode server routes (`/agent`, `/skill`, `/command`, `/session`, `/session/:id/message`). Health now calls `/global/health`. All verified with mocked unit tests.
+
+2. **Message body format**: `sendMessage()` now sends `{ parts: [{ type: 'text', text }] }` format. Omits `agent` and `model` when null. No `workspace` or `session` fields in body.
+
+3. **Scanner self-import**: Removed `import type { SkillScanResult, SkillScanStatus } from './scanner.js'` circular self-import.
+
+4. **Quota check on Web chat**: Web messages now check balance before sending. Charge 1 unit for `web_message`. Returns 429 when quota is 0. Refunds on OpenCode failure with `refund_opencode_error`.
+
+5. **Daily quota refill**: Now computes `delta = max(0, dailyLimit - balance)` instead of adding full limit every day. Never raises balance above limit. No zero-delta noise records.
+
+6. **Telegram /new creates real OpenCode session**: Calls `opencodeClient.createSession()` instead of using `local-*` fallback.
+
+7. **Telegram /remind creates real reminders**: Implemented natural language parser supporting: `YYYY-MM-DD HH:MM`, `tomorrow HH:MM`, `today HH:MM`, `in Xm`, `in Xh`. Inserts real `reminders` row.
+
+8. **Marketplace skill content**: Added `marketplace_skills_content` table. Import stores original SKILL.md with sha256. Install copies original content (not regenerated from description). Added metadata.json with source, version, author, sha256, installedAt.
+
+9. **Admin PATCH allowlist**: Replaced mass-assignment with strict Zod schema. Only allows: displayName, role, status, dailyQuotaLimit, language, responseStyle. Rejects passwordHash, id, email, createdAt, updatedAt, welcomeQuotaGranted.
+
+10. **Auth middleware DB-backed**: JWT only trusted for userId identity. Loads user from DB on each request. Rejects if user not found or status !== 'active'. Role comes from DB, not token. Blocked users lose access immediately.
+
+11. **CORS restricted**: Added `CORS_ORIGINS` env variable. Production requires explicit origins. No `origin: true` in any mode.
+
+12. **Local fallback gated**: Added `ALLOW_LOCAL_OPENCODE_FALLBACK` env (default: false). Production never creates `local-*` sessions. Development-only fallback behind explicit flag.
+
+#### P1 hardening applied
+
+1. **Audit log**: Added `audit_log` table and service. Logs: user_registered, login_success, telegram_linked, admin_user_updated, quota_granted, marketplace_skill_imported, marketplace_skill_status_changed, marketplace_skill_installed. Admin audit endpoint returns audit_log, not quota_ledger.
+
+2. **FTS sync**: Added SQLite triggers (`messages_fts_insert`, `messages_fts_delete`, `messages_fts_update`) to automatically sync messages to FTS5 index.
+
+3. **AGENTS.md commits**: PUT /api/me/agents-md now validates content (non-empty, max 100KB), writes file, and commits to workspace git with fixed author.
+
+4. **Skill slug validation**: All skill endpoints (GET, POST, PUT, DELETE) now validate slug with same regex. Content size validation added (max 100KB).
+
+5. **Build system**: Switched from `tsc` to `esbuild` for backend build (pragmatic — tsx works fine for dev, esbuild for production bundles).
+
+#### Tests added (51 tests, all passing)
+
+- OpenCodeClient endpoint mapping (9 tests)
+- OpenCodeClient omits agent/model when null
+- Workspace path escape attempts (5 tests)
+- Admin PATCH allowlist/reject (9 tests)
+- Reminder parser patterns (7 tests)
+- Daily quota refill logic (5 tests)
+- Skill slug validation (8 tests)
+- Marketplace scanner patterns (8 tests)
+
+#### Env changes
+
+Added to `.env.example`:
+- `ALLOW_LOCAL_OPENCODE_FALLBACK=false`
+- `CORS_ORIGINS=http://localhost:5173`
