@@ -1,0 +1,16 @@
+{
+  "name": "multi-opencode-agent",
+  "version": "0.1.0",
+  "private": true,
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev:backend": "npm run dev -w @moca/backend",
+    "dev:frontend": "npm run dev -w @moca/frontend",
+    "build": "npm run build -w @moca/backend -w @moca/frontend",
+    "db:migrate": "npm run db:migrate -w @moca/backend",
+    "db:generate": "npm run db:generate -w @moca/backend"
+  }
+}
