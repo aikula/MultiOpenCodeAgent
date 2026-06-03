@@ -136,8 +136,13 @@ export class OpenCodeClient {
     })
 
     const data = await res.json() as {
-      info: { id: string; role: string }
+      info: { id: string; role: string; error?: { data?: { message?: string } } }
       parts: Array<{ type: string; text?: string }>
+    }
+
+    // Check for error in response
+    if (data.info?.error?.data?.message) {
+      throw new Error(data.info.error.data.message)
     }
 
     const textParts = data.parts

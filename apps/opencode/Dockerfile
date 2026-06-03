@@ -1,12 +1,13 @@
-FROM ubuntu:24.04
+FROM node:20-slim
 
-RUN apt-get update && apt-get install -y curl git ca-certificates && rm -rf /var/lib/apt/lists/*
+RUN apt-get update && apt-get install -y git curl && rm -rf /var/lib/apt/lists/*
 
-RUN curl -fsSL https://opencode.ai/install | bash
+RUN npm install -g opencode-ai
 
 WORKDIR /workspace
 
 COPY apps/opencode/opencode.json /root/.config/opencode/opencode.json
+RUN mkdir -p /root/.local/share/opencode
 COPY apps/opencode/auth.json /root/.local/share/opencode/auth.json
 
 RUN git config --global user.email "moca@local" && git config --global user.name "MOCA"
