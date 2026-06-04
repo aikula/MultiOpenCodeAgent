@@ -4,6 +4,14 @@ function getToken(): string | null {
   return localStorage.getItem('token')
 }
 
+export class ApiError extends Error {
+  status: number
+  constructor(message: string, status: number) {
+    super(message)
+    this.status = status
+  }
+}
+
 async function request(path: string, options: RequestInit = {}) {
   const token = getToken()
   const headers: Record<string, string> = {
@@ -13,12 +21,24 @@ async function request(path: string, options: RequestInit = {}) {
   if (token) headers['Authorization'] = `Bearer ${token}`
 
   const res = await fetch(`${BASE}${path}`, { ...options, headers })
-  if (res.status === 401) {
-    localStorage.removeItem('token')
-    window.location.href = '/login'
-    throw new Error('Unauthorized')
+
+  let data: any = null
+  try {
+    data = await res.json()
+  } catch {
+    data = null
   }
-  return res.json()
+
+  if (!res.ok) {
+    const message = data?.error || data?.message || `HTTP ${res.status}`
+    if (res.status === 401 && token) {
+      localStorage.removeItem('token')
+      window.location.href = '/login'
+    }
+    throw new ApiError(message, res.status)
+  }
+
+  return data
 }
 
 export const api = {

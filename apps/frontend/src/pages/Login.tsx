@@ -6,14 +6,18 @@ export function LoginPage() {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [error, setError] = useState('')
+  const [loading, setLoading] = useState(false)
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     setError('')
+    setLoading(true)
     try {
       await login(email, password)
     } catch (err: any) {
       setError(err.message || 'Login failed')
+    } finally {
+      setLoading(false)
     }
   }
 
@@ -32,8 +36,8 @@ export function LoginPage() {
           className="w-full border border-gray-300 rounded px-3 py-2 mb-6 text-sm"
           required
         />
-        <button type="submit" className="w-full bg-blue-600 text-white rounded px-3 py-2 text-sm hover:bg-blue-700">
-          Login
+        <button type="submit" disabled={loading} className="w-full bg-blue-600 text-white rounded px-3 py-2 text-sm hover:bg-blue-700 disabled:opacity-50">
+          {loading ? 'Logging in…' : 'Login'}
         </button>
         <p className="text-center text-sm text-gray-500 mt-4">
           <a href="/register" className="text-blue-600 hover:underline">Register</a>
@@ -49,14 +53,18 @@ export function RegisterPage() {
   const [password, setPassword] = useState('')
   const [displayName, setDisplayName] = useState('')
   const [error, setError] = useState('')
+  const [loading, setLoading] = useState(false)
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     setError('')
+    setLoading(true)
     try {
       await register(email, password, displayName || undefined)
     } catch (err: any) {
       setError(err.message || 'Registration failed')
+    } finally {
+      setLoading(false)
     }
   }
 
@@ -79,8 +87,8 @@ export function RegisterPage() {
           className="w-full border border-gray-300 rounded px-3 py-2 mb-6 text-sm"
           required minLength={6}
         />
-        <button type="submit" className="w-full bg-blue-600 text-white rounded px-3 py-2 text-sm hover:bg-blue-700">
-          Register
+        <button type="submit" disabled={loading} className="w-full bg-blue-600 text-white rounded px-3 py-2 text-sm hover:bg-blue-700 disabled:opacity-50">
+          {loading ? 'Creating account…' : 'Register'}
         </button>
         <p className="text-center text-sm text-gray-500 mt-4">
           <a href="/login" className="text-blue-600 hover:underline">Login</a>

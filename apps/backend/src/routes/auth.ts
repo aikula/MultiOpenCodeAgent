@@ -73,7 +73,15 @@ async function createMainSession(userId: string, workspacePath: string) {
 export async function authRoutes(app: FastifyInstance) {
   app.post('/api/auth/register', async (request, reply) => {
     const body = registerSchema.parse(request.body)
-    const user = await registerUser(body.email, body.password, body.displayName)
+    let user
+    try {
+      user = await registerUser(body.email, body.password, body.displayName)
+    } catch (err: any) {
+      if (err.message === 'Email already registered') {
+        return reply.status(409).send({ error: err.message })
+      }
+      throw err
+    }
 
     const ws = await createWorkspace(user.id)
     grantWelcomeQuota(user.id)
@@ -106,7 +114,18 @@ export async function authRoutes(app: FastifyInstance) {
 
   app.post('/api/auth/login', async (request, reply) => {
     const body = loginSchema.parse(request.body)
-    const result = await loginUser(body.email, body.password)
+    let result
+    try {
+      result = await loginUser(body.email, body.password)
+    } catch (err: any) {
+      if (err.message === 'Invalid credentials') {
+        return reply.status(401).send({ error: err.message })
+      }
+      if (err.message === 'Account blocked') {
+        return reply.status(403).send({ error: err.message })
+      }
+      throw err
+    }
 
     db.insert(auditLog).values({
       id: uuid(),
