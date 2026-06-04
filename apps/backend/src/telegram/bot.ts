@@ -8,6 +8,7 @@ import { users, telegramLinks, sessions, messages, workspaces, reminders, auditL
 import { getWorkspace, assertInsideWorkspace } from '../services/workspace.js'
 import { opencodeClient } from '../opencode/client.js'
 import { chargeQuota, getBalance } from '../services/quota.js'
+import { buildMessageContext } from '../services/message-context.js'
 import { env } from '../env.js'
 import { consumeLoginCode } from '../routes/auth.js'
 import {
@@ -81,7 +82,7 @@ async function sendToSession(user: { id: string; defaultAgent: string | null; de
     const result = await opencodeClient.sendMessage({
       workspacePath: ws.path,
       opencodeSessionId: session.opencodeSessionId,
-      text,
+      text: text + buildMessageContext(user.id).prompt,
       agent: user.defaultAgent,
       model: user.defaultModel,
     })

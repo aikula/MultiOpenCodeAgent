@@ -6,6 +6,7 @@ import { sessions, messages, workspaces } from '../db/schema.js'
 import { opencodeClient } from '../opencode/client.js'
 import { getWorkspace } from '../services/workspace.js'
 import { getBalance, chargeQuota } from '../services/quota.js'
+import { buildMessageContext } from '../services/message-context.js'
 import { sendMessageSchema } from '@moca/shared/validation'
 import { env } from '../env.js'
 
@@ -116,10 +117,12 @@ export async function sessionRoutes(app: FastifyInstance) {
     let ocMessageId: string | null = null
 
     try {
+      const ctx = buildMessageContext(request.user.userId)
+      const enrichedText = body.text + ctx.prompt
       const result = await opencodeClient.sendMessage({
         workspacePath: ws.path,
         opencodeSessionId: session.opencodeSessionId,
-        text: body.text,
+        text: enrichedText,
       })
       assistantContent = result.content
       ocMessageId = result.messageId
