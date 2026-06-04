@@ -44,6 +44,7 @@ export const api = {
     request(`/sessions/${sessionId}`, { method: 'DELETE' }),
 
   // Settings
+  getLoginCode: () => request('/me/login-code'),
   getSettings: () => request('/me/settings'),
   updateSettings: (data: object) =>
     request('/me/settings', { method: 'PUT', body: JSON.stringify(data) }),
