@@ -10,6 +10,12 @@ import { opencodeClient } from '../opencode/client.js'
 import { chargeQuota, getBalance } from '../services/quota.js'
 import { env } from '../env.js'
 import { consumeLoginCode } from '../routes/auth.js'
+import {
+  buildDailyPlanContext,
+  buildFindContext,
+  buildMeetingBrief,
+  buildVoiceActionSummary,
+} from '../services/manager.js'
 import { writeFileAsync, mkdirAsync, readdirAsync, statAsync } from '../lib/async-fs.js'
 
 let bot: Telegraf | null = null
@@ -365,6 +371,10 @@ export function startTelegramBot(): Telegraf | null {
       '/limits — Show quota balance\n' +
       '/remind <when> <text> — Create reminder\n' +
       '/calendar — Today\'s events\n' +
+      '/daily — Daily plan from calendar, reminders, memory\n' +
+      '/find <query> — Search prior messages and memory\n' +
+      '/meeting <notes> — Extract brief from meeting notes\n' +
+      '/voice <text> — Extract actions from voice transcript\n' +
       '/files [path] — List your files\n' +
       '/sendfile <path> — Get a file\n' +
       '/settings — Show your settings\n' +
@@ -416,6 +426,161 @@ export function startTelegramBot(): Telegraf | null {
       `${e.startsAt?.split('T')[1]?.slice(0, 5) ?? '??:??'} — ${e.title}${e.location ? ` @ ${e.location}` : ''}`
     ).join('\n')
     await ctx.reply(`Today (${today}):\n${text}`)
+  })
+
+  bot.command('daily', async (ctx) => {
+    const user = getUserByTelegramId(String(ctx.from?.id))
+    if (!user) { await ctx.reply('Not linked.'); return }
+
+    const balance = getBalance(user.id)
+    if (balance <= 0) {
+      await ctx.reply('Quota exceeded. Contact admin for more.')
+      return
+    }
+
+    const ws = getWorkspace(user.id)
+    if (!ws) { await ctx.reply('No workspace.'); return }
+    const session = getMainSession(user.id)
+    if (!session) { await ctx.reply('No main session.'); return }
+
+    const ctx_data = buildDailyPlanContext(user.id)
+    if (ctx_data.events.length === 0 && ctx_data.pendingReminders.length === 0 &&
+        ctx_data.recentMemory.length === 0 && ctx_data.recentMessages.length === 0) {
+      await ctx.reply(`Daily plan for ${ctx_data.date} (${ctx_data.timezone}):\n\nNo events, reminders, or recent context yet. Add some via Web UI or /remind /calendar.`)
+      return
+    }
+
+    chargeQuota(user.id, 1, 'telegram_message')
+    let content = ''
+    try {
+      const result = await opencodeClient.sendMessage({
+        workspacePath: ws.path,
+        opencodeSessionId: session.opencodeSessionId,
+        text: ctx_data.prompt,
+        agent: 'daily-plan',
+      })
+      content = result.content
+    } catch (err: any) {
+      chargeQuota(user.id, -1, 'refund_opencode_error')
+      await ctx.reply(`OpenCode error: ${err.message}`)
+      return
+    }
+
+    const msgId = uuid()
+    db.insert(messages).values({
+      id: msgId,
+      userId: user.id,
+      sessionId: session.id,
+      role: 'user',
+      content: '/daily',
+      channel: 'telegram',
+      createdAt: new Date().toISOString(),
+    }).run()
+    db.insert(messages).values({
+      id: uuid(),
+      userId: user.id,
+      sessionId: session.id,
+      role: 'assistant',
+      content,
+      channel: 'telegram',
+      createdAt: new Date().toISOString(),
+    }).run()
+
+    await ctx.reply(content.slice(0, 4000))
+  })
+
+  bot.command('find', async (ctx) => {
+    const user = getUserByTelegramId(String(ctx.from?.id))
+    if (!user) { await ctx.reply('Not linked.'); return }
+
+    const query = ctx.message?.text?.split(' ').slice(1).join(' ').trim()
+    if (!query) {
+      await ctx.reply('Usage: /find <query>')
+      return
+    }
+
+    const ctx_data = buildFindContext(user.id, query)
+    if (ctx_data.messages.length === 0 && ctx_data.memory.length === 0) {
+      await ctx.reply(`No prior context matching "${query}".`)
+      return
+    }
+
+    const lines: string[] = [`Found ${ctx_data.messages.length} message(s), ${ctx_data.memory.length} memory item(s) for "${query}":\n`]
+    for (const m of ctx_data.messages.slice(0, 5)) {
+      const snippet = m.content.slice(0, 150).replace(/\n/g, ' ')
+      lines.push(`[${m.createdAt.split('T')[0]}] ${snippet}${m.content.length > 150 ? '…' : ''}`)
+    }
+    for (const m of ctx_data.memory.slice(0, 5)) {
+      lines.push(`[memory:${m.type}] ${m.content}`)
+    }
+    await ctx.reply(lines.join('\n').slice(0, 4000))
+  })
+
+  bot.command('meeting', async (ctx) => {
+    const user = getUserByTelegramId(String(ctx.from?.id))
+    if (!user) { await ctx.reply('Not linked.'); return }
+
+    const notes = ctx.message?.text?.split(' ').slice(1).join(' ').trim()
+    if (!notes) {
+      await ctx.reply('Usage: /meeting <paste meeting notes here>')
+      return
+    }
+    if (notes.length > 8000) {
+      await ctx.reply('Notes too long (max 8000 chars). Use Web UI for longer notes.')
+      return
+    }
+
+    const result = buildMeetingBrief(notes)
+    const lines: string[] = ['Meeting brief:\n']
+    if (result.decisions.length > 0) {
+      lines.push('Decisions:')
+      for (const d of result.decisions) lines.push(`• ${d}`)
+    }
+    if (result.actionItems.length > 0) {
+      lines.push('\nAction items:')
+      for (const a of result.actionItems) {
+        lines.push(`• ${a.owner ?? '?'}: ${a.task}${a.deadline ? ` (${a.deadline})` : ''}`)
+      }
+    }
+    if (result.risks.length > 0) {
+      lines.push('\nRisks:')
+      for (const r of result.risks) lines.push(`• ${r}`)
+    }
+    if (result.followUps.length > 0) {
+      lines.push('\nFollow-ups:')
+      for (const f of result.followUps) lines.push(`• ${f}`)
+    }
+    if (result.decisions.length === 0 && result.actionItems.length === 0 &&
+        result.risks.length === 0 && result.followUps.length === 0) {
+      lines.push('No explicit actions/decisions/risks detected. Sending to main session for analysis.')
+      await sendToSession(user, `/meeting\n\n${notes}`, ctx)
+      return
+    }
+    await ctx.reply(lines.join('\n').slice(0, 4000))
+  })
+
+  bot.command('voice', async (ctx) => {
+    const user = getUserByTelegramId(String(ctx.from?.id))
+    if (!user) { await ctx.reply('Not linked.'); return }
+
+    const text = ctx.message?.text?.split(' ').slice(1).join(' ').trim()
+    if (!text) {
+      await ctx.reply('Usage: /voice <transcript text>\nUse this after a voice message, or to summarize any spoken-style note.')
+      return
+    }
+
+    const result = buildVoiceActionSummary(text)
+    if (result.actions.length === 0) {
+      await ctx.reply('No action triggers detected in transcript. Send via main session for full analysis.')
+      return
+    }
+
+    const lines: string[] = ['Voice action summary:\n']
+    for (const a of result.actions) {
+      lines.push(`[${a.kind}] ${a.text}`)
+    }
+    lines.push('\nUse /remind to create a reminder from any of these.')
+    await ctx.reply(lines.join('\n').slice(0, 4000))
   })
 
   bot.command('settings', async (ctx) => {

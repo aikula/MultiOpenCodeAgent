@@ -3,7 +3,7 @@ import { eq } from 'drizzle-orm'
 import { v4 as uuid } from 'uuid'
 import { randomBytes } from 'crypto'
 import { registerUser, loginUser, generateToken } from '../services/auth.js'
-import { createWorkspace } from '../services/workspace.js'
+import { createWorkspace, getWorkspace } from '../services/workspace.js'
 import { grantWelcomeQuota, getBalance } from '../services/quota.js'
 import { db } from '../db/index.js'
 import { sessions, workspaces, users, auditLog } from '../db/schema.js'
@@ -159,6 +159,18 @@ export async function authRoutes(app: FastifyInstance) {
   }, async (request) => {
     const code = getLoginCode(request.user.userId)
     return { code }
+  })
+
+  app.get('/api/me/workspace', {
+    preHandler: [app.authenticate],
+  }, async (request) => {
+    const ws = getWorkspace(request.user.userId)
+    if (!ws) return { error: 'No workspace' }
+    return {
+      id: ws.id,
+      path: ws.path,
+      createdAt: ws.createdAt,
+    }
   })
 
   app.get('/api/me/limits', {

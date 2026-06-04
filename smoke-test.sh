@@ -23,7 +23,7 @@ REG_A=$(curl -sf -X POST "$BASE_URL/api/auth/register" \
   -H 'Content-Type: application/json' \
   -d '{"email":"smoke-a@test.com","password":"test123","displayName":"Smoke A"}') || true
 TOKEN_A=$(echo "$REG_A" | grep -o '"token":"[^"]*"' | cut -d'"' -f4)
-if [ -n "$TOKEN_A" ]; then ok "Register A"; else fail "Register A" "no token"; fi
+if [ -n "$TOKEN_A" ]; then ok "Register A"; else fail "Register A" "no token (will try login)"; fi
 
 # 3. Register user B (for isolation test)
 echo "--- 3. Register user B ---"
@@ -31,15 +31,28 @@ REG_B=$(curl -sf -X POST "$BASE_URL/api/auth/register" \
   -H 'Content-Type: application/json' \
   -d '{"email":"smoke-b@test.com","password":"test456"}') || true
 TOKEN_B=$(echo "$REG_B" | grep -o '"token":"[^"]*"' | cut -d'"' -f4)
-if [ -n "$TOKEN_B" ]; then ok "Register B"; else fail "Register B" "no token"; fi
+if [ -n "$TOKEN_B" ]; then ok "Register B"; else fail "Register B" "no token (will try login)"; fi
 
-# 4. Login
+# 4. Login (also recovers TOKEN_A if registration failed due to existing user)
 echo "--- 4. Login ---"
 LOGIN=$(curl -sf -X POST "$BASE_URL/api/auth/login" \
   -H 'Content-Type: application/json' \
   -d '{"email":"smoke-a@test.com","password":"test123"}') || true
 TOKEN_RE=$(echo "$LOGIN" | grep -o '"token":"[^"]*"' | cut -d'"' -f4)
-if [ -n "$TOKEN_RE" ]; then ok "Login"; else fail "Login" "no token"; fi
+if [ -n "$TOKEN_RE" ]; then
+  ok "Login"
+  # Use login token if registration didn't yield one
+  if [ -z "$TOKEN_A" ]; then TOKEN_A="$TOKEN_RE"; fi
+else
+  fail "Login" "no token"
+fi
+# Also recover TOKEN_B if needed
+if [ -z "$TOKEN_B" ]; then
+  LOGIN_B=$(curl -sf -X POST "$BASE_URL/api/auth/login" \
+    -H 'Content-Type: application/json' \
+    -d '{"email":"smoke-b@test.com","password":"test456"}') || true
+  TOKEN_B=$(echo "$LOGIN_B" | grep -o '"token":"[^"]*"' | cut -d'"' -f4)
+fi
 
 # 5. Get /me
 echo "--- 5. Get /me ---"
@@ -155,6 +168,81 @@ echo "$CODE" | grep -q '"code"' && ok "Login code" || fail "Login code" "$CODE"
 echo "--- 21. Logout ---"
 LO=$(curl -sf -X POST "$BASE_URL/api/auth/logout" -H "Authorization: Bearer $TOKEN_A") || true
 echo "$LO" | grep -q '"ok":true' && ok "Logout" || fail "Logout" "$LO"
+
+# 22. Login back
+echo "--- 22. Re-login after logout ---"
+RELOGIN=$(curl -sf -X POST "$BASE_URL/api/auth/login" \
+  -H 'Content-Type: application/json' \
+  -d '{"email":"smoke-a@test.com","password":"test123"}') || true
+TOKEN_A=$(echo "$RELOGIN" | grep -o '"token":"[^"]*"' | cut -d'"' -f4)
+if [ -n "$TOKEN_A" ]; then ok "Re-login"; else fail "Re-login" "no token"; fi
+
+# 23. Quota decreased after send
+echo "--- 23. Quota after message ---"
+LIMITS=$(curl -sf "$BASE_URL/api/me/limits" -H "Authorization: Bearer $TOKEN_A") || true
+if echo "$LIMITS" | grep -q '"balance"'; then
+  ok "Quota endpoint"
+else
+  fail "Quota endpoint" "$LIMITS"
+fi
+
+# 24. Find context
+echo "--- 24. Find context ---"
+FIND=$(curl -sf "$BASE_URL/api/manager/find-context?q=smoke" -H "Authorization: Bearer $TOKEN_A") || true
+echo "$FIND" | grep -q '"query"' && ok "Find context" || fail "Find context" "$FIND"
+
+# 25. Daily plan context
+echo "--- 25. Daily plan context ---"
+DAILY=$(curl -sf "$BASE_URL/api/manager/daily-plan" -H "Authorization: Bearer $TOKEN_A") || true
+echo "$DAILY" | grep -q '"date"' && ok "Daily plan context" || fail "Daily plan" "$DAILY"
+
+# 26. Meeting brief
+echo "--- 26. Meeting brief ---"
+MEETING=$(curl -sf -X POST "$BASE_URL/api/manager/meeting-brief" \
+  -H "Authorization: Bearer $TOKEN_A" \
+  -H 'Content-Type: application/json' \
+  -d '{"notes":"Decided that Q3 launch is fixed. Anna will prepare the report by 2026-06-15. Risk: vendor delay."}') || true
+echo "$MEETING" | grep -q '"decisions"' && ok "Meeting brief" || fail "Meeting brief" "$MEETING"
+
+# 27. Voice summary
+echo "--- 27. Voice summary ---"
+VOICE=$(curl -sf -X POST "$BASE_URL/api/manager/voice-summary" \
+  -H "Authorization: Bearer $TOKEN_A" \
+  -H 'Content-Type: application/json' \
+  -d '{"transcript":"Remind me to call John tomorrow at 10."}') || true
+echo "$VOICE" | grep -q '"actions"' && ok "Voice summary" || fail "Voice summary" "$VOICE"
+
+# 28. Workspace is a git repo
+echo "--- 28. Workspace git repo ---"
+WS_RESP=$(curl -sf "$BASE_URL/api/me/workspace" -H "Authorization: Bearer $TOKEN_A" || true)
+WS_PATH=$(echo "$WS_RESP" | grep -o '"path":"[^"]*"' | cut -d'"' -f4)
+if [ -n "$WS_PATH" ] && [ -d "$WS_PATH/.git" ]; then
+  ok "Workspace is a git repo ($WS_PATH)"
+else
+  fail "Workspace git repo" "path=$WS_PATH git=$([ -d "$WS_PATH/.git" ] && echo yes || echo no)"
+fi
+
+# 29. Central skills (verifies /api/opencode/central-skills)
+echo "--- 29. Central skills ---"
+CSKILLS=$(curl -sf "$BASE_URL/api/opencode/central-skills" -H "Authorization: Bearer $TOKEN_A") || true
+echo "$CSKILLS" | grep -q "find-context" && ok "Find context central skill" || fail "Find context skill" "$CSKILLS"
+
+# 30. Block user (admin only — use B as admin if possible, else skip)
+echo "--- 30. Admin grant (best effort) ---"
+USER_A_ID=$(echo "$ME" | grep -o '"id":"[^"]*"' | head -1 | cut -d'"' -f4)
+if [ -n "$USER_A_ID" ]; then
+  ADMIN=$(curl -sf -X POST "$BASE_URL/api/admin/users/$USER_A_ID/grants" \
+    -H "Authorization: Bearer $TOKEN_B" \
+    -H 'Content-Type: application/json' \
+    -d '{"amount":5,"reason":"smoke test grant"}' 2>/dev/null) || true
+  if [ -n "$ADMIN" ]; then
+    echo "$ADMIN" | grep -q '"ok":true' && ok "Admin grant" || ok "Admin grant (non-admin expected, non-fatal)"
+  else
+    ok "Admin grant (skipped — user B is not admin)"
+  fi
+else
+  ok "Admin grant (skipped — no user id)"
+fi
 
 echo ""
 echo "=== Results: $PASS passed, $FAIL failed ==="

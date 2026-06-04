@@ -18,6 +18,7 @@ import { marketplaceRoutes } from './routes/marketplace.js'
 import { opencodeRoutes } from './routes/opencode.js'
 import { memoryRoutes } from './routes/memory.js'
 import { fileRoutes } from './routes/files.js'
+import { managerRoutes } from './routes/manager.js'
 import { startTelegramBot } from './telegram/bot.js'
 import { startScheduler, setTelegramBot } from './services/scheduler.js'
 import { sql } from 'drizzle-orm'
@@ -76,6 +77,7 @@ app.register(marketplaceRoutes)
 app.register(opencodeRoutes)
 app.register(memoryRoutes)
 app.register(fileRoutes)
+app.register(managerRoutes)
 
 const telegramBot = startTelegramBot()
 if (telegramBot) setTelegramBot(telegramBot)

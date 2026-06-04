@@ -1,4 +1,22 @@
 import dotenv from 'dotenv'
+import { existsSync } from 'fs'
+import { resolve, dirname, join } from 'path'
+import { fileURLToPath } from 'url'
+
+const __filename = fileURLToPath(import.meta.url)
+const __dirname = dirname(__filename)
+
+let dir = __dirname
+for (let i = 0; i < 8; i++) {
+  const candidate = join(dir, '.env')
+  if (existsSync(candidate)) {
+    dotenv.config({ path: candidate })
+    break
+  }
+  const parent = dirname(dir)
+  if (parent === dir) break
+  dir = parent
+}
 dotenv.config()
 
 import { z } from 'zod'
