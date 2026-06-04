@@ -9,8 +9,8 @@ BASE_URL="${1:-http://127.0.0.1:3000}"
 SPAWN="${SPAWN:-1}"
 
 # Clean test data
-rm -f data/backend/app.db* apps/backend/data/app.db* 2>/dev/null || true
-rm -rf data/workspaces/* apps/backend/data 2>/dev/null || true
+rm -f data/app.db* data/backend/app.db* apps/backend/data/app.db* 2>/dev/null || true
+rm -rf data/workspaces/* data/backend/workspaces/* apps/backend/data 2>/dev/null || true
 
 if [ "$SPAWN" = "1" ]; then
   # Clean any leftover local backend processes

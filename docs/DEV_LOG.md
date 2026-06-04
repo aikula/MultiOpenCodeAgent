@@ -198,3 +198,94 @@ All P0 and P1 items from the review have been addressed:
 Added to `.env.example`:
 - `ALLOW_LOCAL_OPENCODE_FALLBACK=false`
 - `CORS_ORIGINS=http://localhost:5173`
+
+---
+
+## Session: 2026-06-04 (P2 demo polish + guided demo)
+
+### Step 9: Manager service and P2 demo polish
+
+Status: **completed**
+
+Implemented the missing P2 demo polish items from `REVIEW_FIX_SPEC.md`:
+
+- `services/manager.ts` — context builders for the four core manager skills.
+- `routes/manager.ts` — REST endpoints exposed to Web UI.
+- Updated Telegram bot with `/daily`, `/find`, `/meeting`, `/voice` commands.
+- Rewrote 4 central skills to describe the structured input they receive:
+  - `daily-plan/SKILL.md`
+  - `meeting-brief/SKILL.md`
+  - `find-context/SKILL.md`
+  - `voice-action-summary/SKILL.md`
+- Added 13 vitest tests for the manager service.
+- `scripts/seed-demo.ts` — seeds `demo@moca.local` with workspace, sessions, reminders, calendar events, memory items.
+- Expanded `smoke-test.sh` to 30 steps.
+- `scripts/run-smoke.sh` — spins up a local backend, runs the smoke test, cleans up.
+- Added `GET /api/me/workspace` for smoke-test workspace verification.
+- Updated `README.md` with a full 16-step guided demo scenario.
+- Updated root `package.json` with `seed` and `smoke` scripts.
+
+#### Manager service details
+
+`buildDailyPlanContext(userId)`:
+- Pulls today's calendar events.
+- Pulls pending reminders.
+- Pulls last 10 memory items.
+- Pulls last 10 messages.
+- Detects time-window conflicts between events.
+- Builds a structured prompt for the `daily-plan` skill.
+
+`buildFindContext(userId, query)`:
+- Searches `messages_fts` (FTS5) for the query.
+- Falls back to LIKE search when FTS fails.
+- Also searches `memory_items` by content.
+- Builds a structured prompt for the `find-context` skill.
+
+`buildMeetingBrief(notes)`:
+- Tokenises by sentence, then runs pattern-based extraction:
+  - Decisions (English + Russian)
+  - Action items with owner + deadline via per-sentence deadline scan
+  - Risks (English + Russian)
+  - Follow-ups and TODO lines
+- Builds a structured prompt for the `meeting-brief` skill.
+
+`buildVoiceActionSummary(transcript)`:
+- Splits transcript by sentence terminators.
+- Detects reminder triggers (`remind me to`, `напомни мне`).
+- Detects task triggers (`need to`, `must`, `сделать`, `нужно`).
+- Builds a structured prompt for the `voice-action-summary` skill.
+
+#### Tests added (13 new, 64 total)
+
+- `getTodayDate` returns `YYYY-MM-DD`.
+- `getTodayDate` falls back on unknown timezone.
+- `buildMeetingBrief` extracts English decisions.
+- `buildMeetingBrief` extracts Russian decisions.
+- `buildMeetingBrief` extracts action items with owner + deadline.
+- `buildMeetingBrief` extracts risks and follow-ups.
+- `buildMeetingBrief` returns empty arrays on blank input.
+- `buildMeetingBrief` produces a non-empty prompt with raw notes.
+- `buildVoiceActionSummary` detects English reminder triggers.
+- `buildVoiceActionSummary` detects English task triggers.
+- `buildVoiceActionSummary` detects Russian triggers.
+- `buildVoiceActionSummary` returns no actions on plain prose.
+- `buildVoiceActionSummary` handles multiple sentences.
+
+#### Errors and fixes during this batch
+
+1. **Lazy regex captured single chars instead of full tasks** — `[^\.]+?` with optional deadline group was committing early because the optional group can fail. Refactored to a two-step approach: extract action candidate by per-sentence scan, then run a separate `extractDeadline()` helper on the sentence text.
+2. **`to` was too greedy in action verb alternation** — `"Anna to prepare"` matched and polluted the owner field. Removed `to` from the alternation; the engine now matches stronger verbs (`will`, `should`, `needs to`, `must`, `has to`).
+3. **`.env` not loaded when running `npm run seed -w @moca/backend`** — `dotenv.config()` looks for `.env` in `process.cwd()`, but `npm` changes cwd to the workspace directory. Fixed `env.ts` to walk up to 8 parent directories looking for `.env`.
+4. **Smoke test `USER_A_ID` unbound variable** — `set -uo pipefail` plus a missing var caused the script to abort. Guarded with `if [ -n "$USER_A_ID" ]`.
+5. **EADDRINUSE conflict with running `moca-backend` container** — the running Docker container kept the port. Switched `run-smoke.sh` to spawn a local backend on port 3300 by default (`SMOKE_PORT=3300`).
+6. **Smoke test cleanup at wrong paths** — DB and workspaces were at `data/app.db` and `data/backend/workspaces/`, not `data/backend/app.db` and `data/workspaces/`. Updated cleanup to handle both layouts.
+
+#### Final status after P2 polish
+
+- **30/30 smoke test steps pass** (`scripts/run-smoke.sh`)
+- **64/64 vitest unit tests pass**
+- Build passes (esbuild for backend, vite for frontend)
+- Seed creates demo user with 1 main session, 3 reminders, 5 calendar events, 5 memory items
+- Telegram bot responds to all 16 manager commands
+- Manager endpoints exposed at `/api/manager/*` for Web UI
+- Guided demo scenario documented in README (16 steps)
