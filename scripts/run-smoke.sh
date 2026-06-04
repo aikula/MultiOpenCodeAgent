@@ -15,21 +15,27 @@ rm -rf data/workspaces/* apps/backend/data 2>/dev/null || true
 if [ "$SPAWN" = "1" ]; then
   # Clean any leftover local backend processes
   pkill -9 -f "tsx apps/backend" 2>/dev/null || true
-  sleep 1
+  pkill -9 -f "preflight.cjs" 2>/dev/null || true
+  sleep 2
+
+  # Use a non-default port to avoid conflicts with running containers
+  SMOKE_PORT="${SMOKE_PORT:-3300}"
+  BASE_URL="http://127.0.0.1:${SMOKE_PORT}"
 
   # Start backend
   ALLOW_LOCAL_OPENCODE_FALLBACK=true \
   JWT_SECRET=test1234567890 \
   OPENCODE_SERVER_PASSWORD=test \
   TELEGRAM_BOT_TOKEN= \
+  PORT=$SMOKE_PORT \
   nohup npx tsx apps/backend/src/index.ts > /tmp/smoke-backend.log 2>&1 &
   BACKEND_PID=$!
-  echo "Backend PID: $BACKEND_PID"
+  echo "Backend PID: $BACKEND_PID on port $SMOKE_PORT"
 
   # Wait for ready
   for i in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15; do
     if curl -sf "$BASE_URL/health" >/dev/null 2>&1; then
-      echo "Backend ready after ${i}s"
+      echo "Backend ready after ${i}s at $BASE_URL"
       break
     fi
     sleep 1
