@@ -1,12 +1,22 @@
 import { useState, useEffect } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { api } from '../api/client'
+import { useAuth } from '../hooks/useAuth'
 
 export function SettingsPage() {
+  const { logout } = useAuth()
+  const navigate = useNavigate()
   const [settings, setSettings] = useState<Record<string, any>>({})
   const [agentsMd, setAgentsMd] = useState('')
   const [saved, setSaved] = useState(false)
   const [loginCode, setLoginCode] = useState<string | null>(null)
   const [codeLoading, setCodeLoading] = useState(false)
+
+  const [deleteOpen, setDeleteOpen] = useState(false)
+  const [deletePassword, setDeletePassword] = useState('')
+  const [deleteConfirm, setDeleteConfirm] = useState('')
+  const [deleteError, setDeleteError] = useState('')
+  const [deleteLoading, setDeleteLoading] = useState(false)
 
   useEffect(() => {
     api.getSettings().then(data => setSettings(data))
@@ -39,9 +49,38 @@ export function SettingsPage() {
     }
   }
 
+  const handleDeleteAccount = async () => {
+    setDeleteError('')
+    if (deletePassword.length === 0) {
+      setDeleteError('Enter your password')
+      return
+    }
+    if (deleteConfirm !== 'DELETE') {
+      setDeleteError('Type DELETE to confirm')
+      return
+    }
+    setDeleteLoading(true)
+    try {
+      await api.deleteAccount(deletePassword)
+      logout()
+      navigate('/register')
+    } catch (err: any) {
+      setDeleteError(err.message || 'Deletion failed')
+      setDeleteLoading(false)
+    }
+  }
+
   return (
     <div className="max-w-2xl mx-auto p-6">
-      <h1 className="text-2xl font-bold mb-6">Settings</h1>
+      <div className="flex items-center justify-between mb-6">
+        <h1 className="text-2xl font-bold">Settings</h1>
+        <button
+          onClick={() => { logout(); navigate('/login') }}
+          className="text-sm text-gray-600 border border-gray-300 rounded px-3 py-1.5 hover:bg-gray-50"
+        >
+          Log out
+        </button>
+      </div>
 
       <div className="bg-white rounded-lg border border-gray-200 p-4 mb-6">
         <h2 className="font-medium mb-3">Profile</h2>
@@ -105,6 +144,61 @@ export function SettingsPage() {
         <button onClick={saveAgentsMd} className="bg-blue-600 text-white rounded px-4 py-2 text-sm hover:bg-blue-700">
           Save AGENTS.md{saved && ' ✓'}
         </button>
+      </div>
+
+      <div className="bg-white rounded-lg border border-red-200 p-4 mt-6">
+        <h2 className="font-medium mb-1 text-red-700">Danger Zone</h2>
+        <p className="text-sm text-gray-600 mb-3">
+          Permanently delete your account, workspace, sessions, reminders, calendar events and memory.
+          This action cannot be undone.
+        </p>
+        {!deleteOpen ? (
+          <button
+            onClick={() => setDeleteOpen(true)}
+            className="bg-white text-red-700 border border-red-300 rounded px-4 py-2 text-sm hover:bg-red-50"
+          >
+            Delete my account
+          </button>
+        ) : (
+          <div className="border border-red-200 rounded p-3 bg-red-50">
+            <p className="text-sm text-red-800 mb-2 font-medium">
+              This will erase all your data. Type DELETE below to confirm.
+            </p>
+            <label className="block text-xs text-gray-600 mb-1">Your password</label>
+            <input
+              type="password"
+              value={deletePassword}
+              onChange={e => setDeletePassword(e.target.value)}
+              className="w-full border border-gray-300 rounded px-3 py-2 text-sm mb-2 bg-white"
+              autoComplete="current-password"
+            />
+            <label className="block text-xs text-gray-600 mb-1">Type DELETE to confirm</label>
+            <input
+              value={deleteConfirm}
+              onChange={e => setDeleteConfirm(e.target.value)}
+              placeholder="DELETE"
+              className="w-full border border-gray-300 rounded px-3 py-2 text-sm mb-2 bg-white font-mono"
+            />
+            {deleteError && (
+              <p className="text-sm text-red-700 mb-2">{deleteError}</p>
+            )}
+            <div className="flex gap-2">
+              <button
+                onClick={handleDeleteAccount}
+                disabled={deleteLoading}
+                className="bg-red-600 text-white rounded px-4 py-2 text-sm hover:bg-red-700 disabled:opacity-50"
+              >
+                {deleteLoading ? 'Deleting…' : 'Permanently delete account'}
+              </button>
+              <button
+                onClick={() => { setDeleteOpen(false); setDeleteError(''); setDeletePassword(''); setDeleteConfirm('') }}
+                className="bg-white text-gray-700 border border-gray-300 rounded px-4 py-2 text-sm hover:bg-gray-50"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   )

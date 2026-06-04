@@ -205,4 +205,26 @@ export async function authRoutes(app: FastifyInstance) {
       dailyLimit: user?.dailyQuotaLimit ?? env.DAILY_QUOTA_LIMIT,
     }
   })
+
+  app.delete('/api/me', {
+    preHandler: [app.authenticate],
+  }, async (request, reply) => {
+    const body = (request.body ?? {}) as { password?: string }
+    if (!body.password || typeof body.password !== 'string') {
+      return reply.status(400).send({ error: 'Password is required' })
+    }
+    const { deleteUserAccount, AccountDeletionError } = await import(
+      '../services/account-delete.js'
+    )
+    try {
+      await deleteUserAccount(request.user.userId, body.password)
+      return { ok: true }
+    } catch (err: any) {
+      if (err instanceof AccountDeletionError) {
+        return reply.status(err.status).send({ error: err.message })
+      }
+      request.log.error({ err }, 'account deletion failed')
+      return reply.status(500).send({ error: 'Account deletion failed' })
+    }
+  })
 }

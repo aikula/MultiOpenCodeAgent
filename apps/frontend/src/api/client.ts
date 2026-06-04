@@ -72,6 +72,10 @@ export const api = {
   updateAgentsMd: (content: string) =>
     request('/me/agents-md', { method: 'PUT', body: JSON.stringify({ content }) }),
 
+  // Account
+  deleteAccount: (password: string) =>
+    request('/me', { method: 'DELETE', body: JSON.stringify({ password }) }),
+
   // Skills
   listSkills: () => request('/skills'),
   createSkill: (slug: string, content: string) =>
