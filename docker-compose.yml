@@ -24,8 +24,6 @@ services:
       dockerfile: apps/backend/Dockerfile
     container_name: moca-backend
     restart: unless-stopped
-    ports:
-      - "${BACKEND_PORT:-3000}:3000"
     environment:
       - NODE_ENV=${NODE_ENV:-production}
       - PORT=3000
@@ -37,9 +35,10 @@ services:
       - OPENCODE_SERVER_PASSWORD=${OPENCODE_SERVER_PASSWORD:-opencode-secret}
       - ALLOW_LOCAL_OPENCODE_FALLBACK=false
       - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN:-}
+      - TELEGRAM_PROXY=${TELEGRAM_PROXY:-}
       - STT_API_URL=${STT_API_URL:-}
       - STT_API_KEY=${STT_API_KEY:-}
-      - CORS_ORIGINS=${CORS_ORIGINS:-http://localhost:5173,http://localhost:8080}
+      - CORS_ORIGINS=${CORS_ORIGINS:-http://localhost:5173,https://openagent.kulinich.ru}
       - DEFAULT_TIMEZONE=${DEFAULT_TIMEZONE:-Europe/Vilnius}
       - DAILY_QUOTA_LIMIT=${DAILY_QUOTA_LIMIT:-20}
       - WELCOME_QUOTA=${WELCOME_QUOTA:-30}
@@ -61,8 +60,6 @@ services:
       dockerfile: apps/frontend/Dockerfile
     container_name: moca-frontend
     restart: unless-stopped
-    ports:
-      - "${FRONTEND_PORT:-8080}:80"
     depends_on:
       backend:
         condition: service_healthy
@@ -71,3 +68,18 @@ services:
       interval: 30s
       timeout: 5s
       retries: 3
+    networks:
+      - default
+      - tghub-network
+    labels:
+      - "traefik.enable=true"
+      - "traefik.docker.network=tghub-network"
+      - "traefik.http.routers.moca-frontend.rule=Host(`openagent.kulinich.ru`)"
+      - "traefik.http.routers.moca-frontend.entrypoints=websecure"
+      - "traefik.http.routers.moca-frontend.tls=true"
+      - "traefik.http.routers.moca-frontend.tls.certresolver=myresolver"
+      - "traefik.http.services.moca-frontend.loadbalancer.server.port=80"
+
+networks:
+  tghub-network:
+    external: true

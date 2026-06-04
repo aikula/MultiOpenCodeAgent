@@ -1,6 +1,7 @@
 import { Telegraf, type Context } from 'telegraf'
 import { eq } from 'drizzle-orm'
 import { v4 as uuid } from 'uuid'
+import { HttpsProxyAgent } from 'https-proxy-agent'
 import { db } from '../db/index.js'
 import { users, telegramLinks, sessions, messages, workspaces, reminders, auditLog } from '../db/schema.js'
 import { getWorkspace } from '../services/workspace.js'
@@ -152,7 +153,17 @@ export function startTelegramBot(): Telegraf | null {
     return null
   }
 
-  bot = new Telegraf(env.TELEGRAM_BOT_TOKEN)
+  const proxyAgent = env.TELEGRAM_PROXY
+    ? new HttpsProxyAgent(env.TELEGRAM_PROXY)
+    : undefined
+
+  if (proxyAgent) {
+    console.log(`Telegram using proxy: ${env.TELEGRAM_PROXY!.replace(/\/\/[^@]+@/, '//***@')}`)
+  }
+
+  bot = new Telegraf(env.TELEGRAM_BOT_TOKEN, {
+    telegram: { agent: proxyAgent },
+  })
 
   bot.start(async (ctx) => {
     await ctx.reply(
@@ -437,7 +448,7 @@ export function startTelegramBot(): Telegraf | null {
 
     try {
       const fileLink = await ctx.telegram.getFileLink(ctx.message.voice)
-      const response = await fetch(fileLink.toString())
+      const response = await fetch(fileLink.toString(), proxyAgent ? { agent: proxyAgent as any } : {})
       const audioBuffer = Buffer.from(await response.arrayBuffer())
 
       const ws = getWorkspace(user.id)

@@ -20,6 +20,7 @@ const envSchema = z.object({
     .default('false'),
 
   TELEGRAM_BOT_TOKEN: z.string().optional(),
+  TELEGRAM_PROXY: z.string().optional(),
   STT_API_URL: z.string().optional(),
   STT_API_KEY: z.string().optional(),
 
