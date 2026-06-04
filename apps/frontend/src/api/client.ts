@@ -109,4 +109,54 @@ export const api = {
   listInstalledSkills: () => request('/marketplace/installed'),
   installMarketplaceSkill: (catalogId: string, skillId: string) =>
     request(`/skill-catalogs/${catalogId}/skills/${skillId}/install`, { method: 'POST' }),
+
+  // Files
+  listFiles: (path: string = '') =>
+    request(`/files?path=${encodeURIComponent(path)}`),
+
+  uploadFiles: async (files: File[], destPath: string = '') => {
+    const token = getToken()
+    const formData = new FormData()
+    for (const file of files) formData.append('files', file)
+    formData.append('path', destPath)
+    const res = await fetch(`${BASE}/files/upload`, {
+      method: 'POST',
+      headers: token ? { 'Authorization': `Bearer ${token}` } : {},
+      body: formData,
+    })
+    if (res.status === 401) { localStorage.removeItem('token'); window.location.href = '/login' }
+    return res.json()
+  },
+
+  downloadFile: async (filePath: string) => {
+    const token = getToken()
+    const res = await fetch(`${BASE}/files/download?path=${encodeURIComponent(filePath)}&mode=download`, {
+      headers: token ? { 'Authorization': `Bearer ${token}` } : {},
+    })
+    if (res.status === 401) { localStorage.removeItem('token'); window.location.href = '/login' }
+    const blob = await res.blob()
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = filePath.split('/').pop() || 'file'
+    a.click()
+    URL.revokeObjectURL(url)
+  },
+
+  viewFile: async (filePath: string): Promise<string> => {
+    const token = getToken()
+    const res = await fetch(`${BASE}/files/download?path=${encodeURIComponent(filePath)}&mode=view`, {
+      headers: token ? { 'Authorization': `Bearer ${token}` } : {},
+    })
+    return res.text()
+  },
+
+  deleteFile: (filePath: string) =>
+    request(`/files?path=${encodeURIComponent(filePath)}`, { method: 'DELETE' }),
+
+  createDirectory: (path: string) =>
+    request('/files/mkdir', { method: 'POST', body: JSON.stringify({ path }) }),
+
+  moveFile: (from: string, to: string) =>
+    request('/files/move', { method: 'POST', body: JSON.stringify({ from, to }) }),
 }

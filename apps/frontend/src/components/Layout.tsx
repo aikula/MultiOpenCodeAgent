@@ -14,6 +14,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
     { id: 'calendar', label: 'Calendar', path: '/calendar' },
     { id: 'reminders', label: 'Reminders', path: '/reminders' },
     { id: 'skills', label: 'Skills', path: '/skills' },
+    { id: 'files', label: 'Files', path: '/files' },
     { id: 'settings', label: 'Settings', path: '/settings' },
     ...(user.role === 'admin' ? [{ id: 'admin', label: 'Admin', path: '/admin' }] : []),
   ]

@@ -6,6 +6,7 @@ import { ChatPage } from './pages/Chat'
 import { RemindersPage } from './pages/Calendar'
 import { CalendarPage } from './pages/CalendarView'
 import { SkillsPage } from './pages/Skills'
+import { FilesPage } from './pages/Files'
 import { SettingsPage } from './pages/Settings'
 import { AdminPage } from './pages/Admin'
 
@@ -29,6 +30,7 @@ function AppRoutes() {
       <Route path="/reminders" element={<ProtectedRoute><RemindersPage /></ProtectedRoute>} />
       <Route path="/calendar" element={<ProtectedRoute><CalendarPage /></ProtectedRoute>} />
       <Route path="/skills" element={<ProtectedRoute><SkillsPage /></ProtectedRoute>} />
+      <Route path="/files" element={<ProtectedRoute><FilesPage /></ProtectedRoute>} />
       <Route path="/settings" element={<ProtectedRoute><SettingsPage /></ProtectedRoute>} />
       <Route path="/admin" element={<ProtectedRoute><AdminPage /></ProtectedRoute>} />
     </Routes>

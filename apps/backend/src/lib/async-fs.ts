@@ -1,5 +1,5 @@
 import { execFile } from 'child_process'
-import { readFile, writeFile, mkdir, rm, readdir } from 'fs/promises'
+import { readFile, writeFile, mkdir, rm, readdir, stat, rename } from 'fs/promises'
 import { join } from 'path'
 
 export async function readFileAsync(path: string, encoding: BufferEncoding = 'utf-8'): Promise<string> {
@@ -36,4 +36,29 @@ export async function commitToWorkspace(wsPath: string, message: string): Promis
     await execAsync('git', ['add', '-A'], wsPath)
     await execAsync('git', ['-c', 'user.name=MultiOpenCodeAgent', '-c', 'user.email=system@moca.local', 'commit', '--allow-empty-message', '-m', message], wsPath)
   } catch { /* nothing to commit or git not initialized */ }
+}
+
+export async function statAsync(path: string) {
+  return stat(path)
+}
+
+export async function renameAsync(oldPath: string, newPath: string): Promise<void> {
+  return rename(oldPath, newPath)
+}
+
+export async function getDirectorySize(dirPath: string): Promise<number> {
+  let total = 0
+  try {
+    const entries = await readdir(dirPath, { withFileTypes: true })
+    for (const entry of entries) {
+      const full = join(dirPath, entry.name)
+      if (entry.isDirectory()) {
+        total += await getDirectorySize(full)
+      } else if (entry.isFile()) {
+        const s = await stat(full)
+        total += s.size
+      }
+    }
+  } catch { /* directory may not exist */ }
+  return total
 }

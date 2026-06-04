@@ -29,6 +29,9 @@ const envSchema = z.object({
   DEFAULT_TIMEZONE: z.string().default('Europe/Vilnius'),
   DAILY_QUOTA_LIMIT: z.coerce.number().default(20),
   WELCOME_QUOTA: z.coerce.number().default(30),
+
+  MAX_FILE_SIZE_BYTES: z.coerce.number().default(52428800),
+  MAX_USER_STORAGE_BYTES: z.coerce.number().default(524288000),
 })
 
 export const env = envSchema.parse(process.env)

@@ -1,6 +1,7 @@
 import Fastify from 'fastify'
 import cors from '@fastify/cors'
 import jwt from '@fastify/jwt'
+import multipart from '@fastify/multipart'
 import { env } from './env.js'
 import { db, sqlite } from './db/index.js'
 import { runMigrations } from './db/migrate.js'
@@ -16,6 +17,7 @@ import { adminRoutes } from './routes/admin.js'
 import { marketplaceRoutes } from './routes/marketplace.js'
 import { opencodeRoutes } from './routes/opencode.js'
 import { memoryRoutes } from './routes/memory.js'
+import { fileRoutes } from './routes/files.js'
 import { startTelegramBot } from './telegram/bot.js'
 import { startScheduler, setTelegramBot } from './services/scheduler.js'
 import { sql } from 'drizzle-orm'
@@ -36,6 +38,10 @@ if (env.NODE_ENV === 'production') {
 }
 
 await app.register(jwt, { secret: env.JWT_SECRET })
+
+await app.register(multipart, {
+  limits: { fileSize: env.MAX_FILE_SIZE_BYTES, files: 10 },
+})
 
 await runMigrations()
 
@@ -69,6 +75,7 @@ app.register(adminRoutes)
 app.register(marketplaceRoutes)
 app.register(opencodeRoutes)
 app.register(memoryRoutes)
+app.register(fileRoutes)
 
 const telegramBot = startTelegramBot()
 if (telegramBot) setTelegramBot(telegramBot)

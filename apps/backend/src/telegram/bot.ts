@@ -2,14 +2,15 @@ import { Telegraf, type Context } from 'telegraf'
 import { eq } from 'drizzle-orm'
 import { v4 as uuid } from 'uuid'
 import { HttpsProxyAgent } from 'https-proxy-agent'
+import { join, resolve } from 'path'
 import { db } from '../db/index.js'
 import { users, telegramLinks, sessions, messages, workspaces, reminders, auditLog } from '../db/schema.js'
-import { getWorkspace } from '../services/workspace.js'
+import { getWorkspace, assertInsideWorkspace } from '../services/workspace.js'
 import { opencodeClient } from '../opencode/client.js'
 import { chargeQuota, getBalance } from '../services/quota.js'
 import { env } from '../env.js'
 import { consumeLoginCode } from '../routes/auth.js'
-import { writeFileAsync, mkdirAsync } from '../lib/async-fs.js'
+import { writeFileAsync, mkdirAsync, readdirAsync, statAsync } from '../lib/async-fs.js'
 
 let bot: Telegraf | null = null
 
@@ -364,6 +365,8 @@ export function startTelegramBot(): Telegraf | null {
       '/limits — Show quota balance\n' +
       '/remind <when> <text> — Create reminder\n' +
       '/calendar — Today\'s events\n' +
+      '/files [path] — List your files\n' +
+      '/sendfile <path> — Get a file\n' +
       '/settings — Show your settings\n' +
       '/help — This message\n\n' +
       'Send any text to chat with your agent.'
@@ -454,7 +457,6 @@ export function startTelegramBot(): Telegraf | null {
       const ws = getWorkspace(user.id)
       if (!ws) { await ctx.reply('No workspace.'); return }
 
-      const { join } = await import('path')
       const uploadDir = join(ws.path, 'uploads')
       await mkdirAsync(uploadDir, { recursive: true })
       const filename = `voice_${Date.now()}.ogg`
@@ -469,6 +471,123 @@ export function startTelegramBot(): Telegraf | null {
       await sendToSession(user, transcript, ctx)
     } catch (err: any) {
       await ctx.reply(`Voice error: ${err.message}`)
+    }
+  })
+
+  // Receive documents
+  bot.on('document', async (ctx) => {
+    const user = getUserByTelegramId(String(ctx.from?.id))
+    if (!user) { await ctx.reply('Not linked.'); return }
+
+    const ws = getWorkspace(user.id)
+    if (!ws) { await ctx.reply('No workspace.'); return }
+
+    const doc = ctx.message?.document
+    if (!doc) return
+
+    if (doc.file_size && doc.file_size > 20 * 1024 * 1024) {
+      await ctx.reply('File too large (max 20 MB via Telegram). Upload via Web UI.')
+      return
+    }
+
+    try {
+      const filename = doc.file_name || `file_${Date.now()}`
+      if (filename.slice(filename.lastIndexOf('.')).toLowerCase() === '.exe' ||
+          ['.bat', '.cmd', '.scr', '.dll', '.sh'].includes(filename.slice(filename.lastIndexOf('.')).toLowerCase())) {
+        await ctx.reply('This file type is not allowed.')
+        return
+      }
+
+      const fileLink = await ctx.telegram.getFileLink(doc)
+      const response = await fetch(fileLink.toString(), proxyAgent ? { agent: proxyAgent as any } : {})
+      const buffer = Buffer.from(await response.arrayBuffer())
+
+      const filesDir = join(ws.path, 'files')
+      await mkdirAsync(filesDir, { recursive: true })
+      const filepath = join(filesDir, filename)
+      await writeFileAsync(filepath, buffer)
+
+      await ctx.reply(`Saved: ${filename} (${(buffer.length / 1024).toFixed(1)} KB)`)
+    } catch (err: any) {
+      await ctx.reply(`File error: ${err.message}`)
+    }
+  })
+
+  // Receive photos
+  bot.on('photo', async (ctx) => {
+    const user = getUserByTelegramId(String(ctx.from?.id))
+    if (!user) { await ctx.reply('Not linked.'); return }
+
+    const ws = getWorkspace(user.id)
+    if (!ws) { await ctx.reply('No workspace.'); return }
+
+    try {
+      const photos = ctx.message?.photo
+      if (!photos?.length) return
+      const largest = photos[photos.length - 1]
+
+      const fileLink = await ctx.telegram.getFileLink(largest)
+      const response = await fetch(fileLink.toString(), proxyAgent ? { agent: proxyAgent as any } : {})
+      const buffer = Buffer.from(await response.arrayBuffer())
+
+      const filesDir = join(ws.path, 'files')
+      await mkdirAsync(filesDir, { recursive: true })
+      const filename = `photo_${Date.now()}.jpg`
+      await writeFileAsync(join(filesDir, filename), buffer)
+
+      await ctx.reply(`Saved: ${filename} (${(buffer.length / 1024).toFixed(1)} KB)`)
+    } catch (err: any) {
+      await ctx.reply(`Photo error: ${err.message}`)
+    }
+  })
+
+  // /files [path] - list files
+  bot.command('files', async (ctx) => {
+    const user = getUserByTelegramId(String(ctx.from?.id))
+    if (!user) { await ctx.reply('Not linked.'); return }
+
+    const ws = getWorkspace(user.id)
+    if (!ws) { await ctx.reply('No workspace.'); return }
+
+    const relPath = ctx.message?.text?.split(' ').slice(1).join(' ') ?? ''
+    const dir = join(ws.path, 'files', relPath)
+
+    try {
+      const entries = await readdirAsync(dir, { withFileTypes: true })
+      if (entries.length === 0) {
+        await ctx.reply(`Empty directory: ${relPath || '/'}`)
+        return
+      }
+      const text = entries
+        .filter(e => !e.name.startsWith('.'))
+        .map((e, i) => `${i + 1}. ${e.name}${e.isDirectory() ? '/' : ''}`)
+        .join('\n')
+      await ctx.reply(`Files in /${relPath}:\n${text}`)
+    } catch {
+      await ctx.reply('Directory not found or empty.')
+    }
+  })
+
+  // /sendfile <path>
+  bot.command('sendfile', async (ctx) => {
+    const user = getUserByTelegramId(String(ctx.from?.id))
+    if (!user) { await ctx.reply('Not linked.'); return }
+
+    const ws = getWorkspace(user.id)
+    if (!ws) { await ctx.reply('No workspace.'); return }
+
+    const relPath = ctx.message?.text?.split(' ').slice(1).join(' ')
+    if (!relPath) { await ctx.reply('Usage: /sendfile <path>'); return }
+
+    const resolved = resolve(ws.path, 'files', relPath)
+    assertInsideWorkspace(ws.path, resolved)
+
+    try {
+      const st = await statAsync(resolved)
+      if (!st.isFile()) { await ctx.reply('Not a file.'); return }
+      await ctx.replyWithDocument({ source: resolved, filename: relPath.split('/').pop() })
+    } catch {
+      await ctx.reply('File not found.')
     }
   })
 
