@@ -6,8 +6,9 @@ RUN npm install -g opencode-ai
 
 WORKDIR /workspace
 
+RUN mkdir -p /root/.config/opencode /root/.local/share/opencode
 COPY apps/opencode/opencode.json /root/.config/opencode/opencode.json
-RUN mkdir -p /root/.local/share/opencode
+COPY apps/opencode/skills /root/.config/opencode/skills
 COPY apps/opencode/auth.json /root/.local/share/opencode/auth.json
 
 RUN git config --global user.email "moca@local" && git config --global user.name "MOCA"
