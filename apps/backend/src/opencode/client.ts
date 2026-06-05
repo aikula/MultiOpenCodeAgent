@@ -105,10 +105,12 @@ export class OpenCodeClient {
   }
 
   async createSession(input: { workspacePath: string; title?: string }): Promise<OpenCodeSession> {
-    // OpenCode API: POST /session with { title? }
-    // workspacePath is used locally to identify which project the server is running in
+    // OpenCode API: POST /session with { title?, directory? }
+    // `directory` scopes the session's bash tool to that path (built-in isolation,
+    // no MCP required).
     const body: Record<string, unknown> = {}
     if (input.title) body.title = input.title
+    if (input.workspacePath) body.directory = input.workspacePath
 
     const res = await this.request('/session', {
       method: 'POST',

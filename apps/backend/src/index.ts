@@ -21,6 +21,7 @@ import { fileRoutes } from './routes/files.js'
 import { managerRoutes } from './routes/manager.js'
 import { startTelegramBot } from './telegram/bot.js'
 import { startScheduler, setTelegramBot } from './services/scheduler.js'
+import { startPermissionGate } from './services/permission-gate.js'
 import { sql } from 'drizzle-orm'
 
 const app = Fastify({ logger: true })
@@ -83,6 +84,7 @@ const telegramBot = startTelegramBot()
 if (telegramBot) setTelegramBot(telegramBot)
 
 startScheduler()
+startPermissionGate()
 
 try {
   await app.listen({ port: env.PORT, host: '0.0.0.0' })

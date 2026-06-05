@@ -121,6 +121,11 @@ export function buildMessageContext(userId: string): MessageContext {
 
   let prompt = '\n\n[System context for this turn]\n'
 
+  if (ws) {
+    prompt += `Your workspace: ${ws.path}\n`
+    prompt += `WARNING: Other /workspaces/u_<id>/ directories belong to other users. Do NOT read, write, or list them.\n\n`
+  }
+
   if (files.length > 0) {
     prompt += `\nFiles in your workspace (${files.length}):\n`
     for (const f of files) {

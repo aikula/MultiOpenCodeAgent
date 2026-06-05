@@ -13,7 +13,7 @@ services:
     volumes:
       - ./data/opencode-config:/root/.config/opencode
       - ./data/opencode-data:/root/.local/share/opencode
-      - ./data/backend/workspaces:/workspaces:ro
+      - ./data/backend/workspaces:/workspaces
     healthcheck:
       test: ["CMD", "curl", "-sf", "-u", "opencode:${OPENCODE_SERVER_PASSWORD:-opencode-secret}", "http://localhost:4096/global/health"]
       interval: 30s
