@@ -3,9 +3,10 @@ import { eq } from 'drizzle-orm'
 import { v4 as uuid } from 'uuid'
 import { z } from 'zod'
 import { db } from '../db/index.js'
-import { users, quotaLedger, telegramLinks, auditLog } from '../db/schema.js'
+import { users, quotaLedger, telegramLinks, auditLog, inviteCodes } from '../db/schema.js'
 import { adminMiddleware } from '../middleware/auth.js'
 import { grantQuota } from '../services/quota.js'
+import { createInviteCode } from '../services/invites.js'
 
 const adminUpdateUserSchema = z.object({
   displayName: z.string().max(100).nullable().optional(),
@@ -144,15 +145,88 @@ export async function adminRoutes(app: FastifyInstance) {
   }, async (request) => {
     const { limit, offset, action } = request.query as { limit?: string; offset?: string; action?: string }
 
-    let query = db.select().from(auditLog)
-      .limit(Math.min(parseInt(limit ?? '100'), 500))
-      .offset(parseInt(offset ?? '0'))
+    const appliedLimit = Math.min(parseInt(limit ?? '100'), 500)
+    const appliedOffset = parseInt(offset ?? '0')
 
     if (action) {
-      const { sql, eq } = await import('drizzle-orm')
-      query = query.where(eq(auditLog.action, action))
+      return db.select().from(auditLog)
+        .where(eq(auditLog.action, action))
+        .limit(appliedLimit)
+        .offset(appliedOffset)
+        .all()
     }
 
-    return query.all()
+    return db.select().from(auditLog)
+      .limit(appliedLimit)
+      .offset(appliedOffset)
+      .all()
+  })
+
+  // Invite code management
+  app.get('/api/admin/invites', {
+    preHandler: [adminMiddleware],
+  }, async () => {
+    return db.select({
+      id: inviteCodes.id,
+      label: inviteCodes.label,
+      status: inviteCodes.status,
+      maxUses: inviteCodes.maxUses,
+      usedCount: inviteCodes.usedCount,
+      expiresAt: inviteCodes.expiresAt,
+      createdByUserId: inviteCodes.createdByUserId,
+      createdAt: inviteCodes.createdAt,
+    })
+      .from(inviteCodes)
+      .all()
+  })
+
+  const createInviteSchema = z.object({
+    label: z.string().max(200).optional(),
+    maxUses: z.number().int().min(1).max(10000).default(1),
+    expiresAt: z.string().datetime().optional(),
+  })
+
+  app.post('/api/admin/invites', {
+    preHandler: [adminMiddleware],
+  }, async (request) => {
+    const input = createInviteSchema.parse(request.body)
+    const result = createInviteCode({
+      label: input.label,
+      maxUses: input.maxUses,
+      expiresAt: input.expiresAt,
+      createdByUserId: request.user.userId,
+    })
+    return { id: result.id, code: result.plainCode, label: input.label }
+  })
+
+  app.patch('/api/admin/invites/:id', {
+    preHandler: [adminMiddleware],
+  }, async (request, reply) => {
+    const { id } = request.params as { id: string }
+    const { status, label } = request.body as { status?: string; label?: string }
+
+    const code = db.select().from(inviteCodes).where(eq(inviteCodes.id, id)).get()
+    if (!code) return reply.status(404).send({ error: 'Not found' })
+
+    const updates: Record<string, any> = { updatedAt: new Date().toISOString() }
+    if (status) updates.status = status
+    if (label !== undefined) updates.label = label
+
+    db.update(inviteCodes).set(updates).where(eq(inviteCodes.id, id)).run()
+    return { ok: true }
+  })
+
+  app.post('/api/admin/invites/:id/disable', {
+    preHandler: [adminMiddleware],
+  }, async (request, reply) => {
+    const { id } = request.params as { id: string }
+    const code = db.select().from(inviteCodes).where(eq(inviteCodes.id, id)).get()
+    if (!code) return reply.status(404).send({ error: 'Not found' })
+
+    db.update(inviteCodes)
+      .set({ status: 'disabled', updatedAt: new Date().toISOString() })
+      .where(eq(inviteCodes.id, id))
+      .run()
+    return { ok: true }
   })
 }

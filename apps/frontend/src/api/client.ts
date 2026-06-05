@@ -43,7 +43,7 @@ async function request(path: string, options: RequestInit = {}) {
 
 export const api = {
   // Auth
-  register: (data: { email: string; password: string; displayName?: string }) =>
+  register: (data: { email: string; password: string; displayName?: string; inviteCode: string }) =>
     request('/auth/register', { method: 'POST', body: JSON.stringify(data) }),
   login: (data: { email: string; password: string }) =>
     request('/auth/login', { method: 'POST', body: JSON.stringify(data) }),
@@ -127,6 +127,16 @@ export const api = {
     request(`/admin/users/${id}/quota`, { method: 'POST', body: JSON.stringify({ amount, reason }) }),
   adminAddCatalog: (name: string, sourceType: string, sourceUrl?: string) =>
     request('/skill-catalogs', { method: 'POST', body: JSON.stringify({ name, sourceType, sourceUrl }) }),
+
+  // Admin invites
+  adminListInvites: () => request('/admin/invites'),
+  adminCreateInvite: (data: { label?: string; maxUses?: number; expiresAt?: string }) =>
+    request('/admin/invites', { method: 'POST', body: JSON.stringify(data) }),
+  adminDisableInvite: (id: string) =>
+    request(`/admin/invites/${id}/disable`, { method: 'POST' }),
+
+  // MCP status
+  getMcpStatus: () => request('/opencode/mcp-status'),
 
   // Marketplace
   listMarketplaceSkills: () => request('/marketplace/skills'),

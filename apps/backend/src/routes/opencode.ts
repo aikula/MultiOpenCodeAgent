@@ -111,4 +111,11 @@ export async function opencodeRoutes(app: FastifyInstance) {
   }, async () => {
     return DEMO_COMMANDS
   })
+
+  app.get('/api/opencode/mcp-status', {
+    preHandler: [authMiddleware],
+  }, async () => {
+    const result = await opencodeClient.listMcpStatus()
+    return result
+  })
 }

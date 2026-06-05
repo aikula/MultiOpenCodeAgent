@@ -52,6 +52,7 @@ export function RegisterPage() {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [displayName, setDisplayName] = useState('')
+  const [inviteCode, setInviteCode] = useState('')
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
 
@@ -60,7 +61,7 @@ export function RegisterPage() {
     setError('')
     setLoading(true)
     try {
-      await register(email, password, displayName || undefined)
+      await register(email, password, displayName || undefined, inviteCode)
     } catch (err: any) {
       setError(err.message || 'Registration failed')
     } finally {
@@ -84,8 +85,13 @@ export function RegisterPage() {
         />
         <input
           type="password" placeholder="Password (min 6)" value={password} onChange={e => setPassword(e.target.value)}
-          className="w-full border border-gray-300 rounded px-3 py-2 mb-6 text-sm"
+          className="w-full border border-gray-300 rounded px-3 py-2 mb-4 text-sm"
           required minLength={6}
+        />
+        <input
+          placeholder="Invite code" value={inviteCode} onChange={e => setInviteCode(e.target.value)}
+          className="w-full border border-gray-300 rounded px-3 py-2 mb-6 text-sm"
+          required
         />
         <button type="submit" disabled={loading} className="w-full bg-blue-600 text-white rounded px-3 py-2 text-sm hover:bg-blue-700 disabled:opacity-50">
           {loading ? 'Creating account…' : 'Register'}

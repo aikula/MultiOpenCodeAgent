@@ -239,5 +239,30 @@ export async function runMigrations() {
     )
   `)
 
+  db.run(sql`
+    CREATE TABLE IF NOT EXISTS invite_codes (
+      id TEXT PRIMARY KEY,
+      code_hash TEXT UNIQUE NOT NULL,
+      label TEXT,
+      status TEXT CHECK(status IN ('active', 'disabled', 'expired')) DEFAULT 'active',
+      max_uses INTEGER DEFAULT 1,
+      used_count INTEGER DEFAULT 0,
+      expires_at TEXT,
+      created_by_user_id TEXT REFERENCES users(id),
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    )
+  `)
+
+  db.run(sql`
+    CREATE TABLE IF NOT EXISTS invite_code_uses (
+      id TEXT PRIMARY KEY,
+      invite_code_id TEXT NOT NULL REFERENCES invite_codes(id),
+      user_id TEXT NOT NULL REFERENCES users(id),
+      email TEXT,
+      used_at TEXT NOT NULL
+    )
+  `)
+
   console.log('Database migrations complete.')
 }

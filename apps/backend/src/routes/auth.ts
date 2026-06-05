@@ -5,6 +5,7 @@ import { randomBytes } from 'crypto'
 import { registerUser, loginUser, generateToken } from '../services/auth.js'
 import { createWorkspace, getWorkspace } from '../services/workspace.js'
 import { grantWelcomeQuota, getBalance } from '../services/quota.js'
+import { validateInviteCode, consumeInviteCode } from '../services/invites.js'
 import { db } from '../db/index.js'
 import { sessions, workspaces, users, auditLog } from '../db/schema.js'
 import { registerSchema, loginSchema } from '@moca/shared/validation'
@@ -73,6 +74,13 @@ async function createMainSession(userId: string, workspacePath: string) {
 export async function authRoutes(app: FastifyInstance) {
   app.post('/api/auth/register', async (request, reply) => {
     const body = registerSchema.parse(request.body)
+
+    // Validate invite code
+    const inviteValidation = validateInviteCode(body.inviteCode ?? '')
+    if (!inviteValidation.valid) {
+      return reply.status(400).send({ error: inviteValidation.error })
+    }
+
     let user
     try {
       user = await registerUser(body.email, body.password, body.displayName)
@@ -81,6 +89,11 @@ export async function authRoutes(app: FastifyInstance) {
         return reply.status(409).send({ error: err.message })
       }
       throw err
+    }
+
+    // Consume invite code after successful user creation
+    if (inviteValidation.inviteCodeId) {
+      consumeInviteCode(inviteValidation.inviteCodeId, user.id, user.email)
     }
 
     const ws = await createWorkspace(user.id)

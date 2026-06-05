@@ -19,6 +19,7 @@ loadEnv({ path: resolvePath(join(__dirname, '..', '..', '..', '.env')) })
 
 import { eq } from 'drizzle-orm'
 import { v4 as uuid } from 'uuid'
+import { createHash } from 'crypto'
 import bcrypt from 'bcryptjs'
 import { db, sqlite } from '../db/index.js'
 import { runMigrations } from '../db/migrate.js'
@@ -30,6 +31,7 @@ import {
   calendarEvents,
   memoryItems,
   quotaLedger,
+  inviteCodes,
 } from '../db/schema.js'
 import { createWorkspace } from '../services/workspace.js'
 import { opencodeClient } from '../opencode/client.js'
@@ -198,6 +200,25 @@ async function main() {
   console.log(`Reminders: ${demoReminders.length}`)
   console.log(`Calendar events: ${demoEvents.length}`)
   console.log(`Memory items: ${demoMemory.length}`)
+
+  // Create smoke test invite code
+  const smokeCodeHash = createHash('sha256').update('SMOKE-TEST-CODE').digest('hex')
+  const existingSmoke = db.select().from(inviteCodes).where(eq(inviteCodes.codeHash, smokeCodeHash)).get()
+  if (!existingSmoke) {
+    db.insert(inviteCodes).values({
+      id: uuid(),
+      codeHash: smokeCodeHash,
+      label: 'Smoke test invite',
+      status: 'active',
+      maxUses: 1000,
+      usedCount: 0,
+      createdByUserId: userId,
+      createdAt: now,
+      updatedAt: now,
+    }).run()
+    console.log('Invite code: SMOKE-TEST-CODE (1000 uses)')
+  }
+
   console.log('\nRun "npm run dev" and log in to see demo data.')
 }
 

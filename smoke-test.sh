@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
 set -uo pipefail
 
+# Prerequisites: run "npm run seed" first to create the invite code SMOKE-TEST-CODE.
+# Without it, registration steps will fail with "Invalid invite code."
+
 BASE_URL="${1:-http://127.0.0.1:3000}"
 PASS=0
 FAIL=0
@@ -17,21 +20,21 @@ echo "--- 1. Health check ---"
 STATUS=$(curl -sf "$BASE_URL/health" | grep -o '"status":"ok"' || true)
 if [ -n "$STATUS" ]; then ok "Health"; else fail "Health" "no ok status"; fi
 
-# 2. Register user A
+# 2. Register user A (with invite code)
 echo "--- 2. Register user A ---"
 REG_A=$(curl -sf -X POST "$BASE_URL/api/auth/register" \
   -H 'Content-Type: application/json' \
-  -d '{"email":"smoke-a@test.com","password":"test123","displayName":"Smoke A"}') || true
+  -d '{"email":"smoke-a@test.com","password":"test123","displayName":"Smoke A","inviteCode":"SMOKE-TEST-CODE"}') || true
 TOKEN_A=$(echo "$REG_A" | grep -o '"token":"[^"]*"' | cut -d'"' -f4)
-if [ -n "$TOKEN_A" ]; then ok "Register A"; else fail "Register A" "no token (will try login)"; fi
+if [ -n "$TOKEN_A" ]; then ok "Register A"; else fail "Register A" "no token — $REG_A"; fi
 
 # 3. Register user B (for isolation test)
 echo "--- 3. Register user B ---"
 REG_B=$(curl -sf -X POST "$BASE_URL/api/auth/register" \
   -H 'Content-Type: application/json' \
-  -d '{"email":"smoke-b@test.com","password":"test456"}') || true
+  -d '{"email":"smoke-b@test.com","password":"test456","inviteCode":"SMOKE-TEST-CODE"}') || true
 TOKEN_B=$(echo "$REG_B" | grep -o '"token":"[^"]*"' | cut -d'"' -f4)
-if [ -n "$TOKEN_B" ]; then ok "Register B"; else fail "Register B" "no token (will try login)"; fi
+if [ -n "$TOKEN_B" ]; then ok "Register B"; else fail "Register B" "no token — $REG_B"; fi
 
 # 4. Login (also recovers TOKEN_A if registration failed due to existing user)
 echo "--- 4. Login ---"
@@ -243,6 +246,20 @@ if [ -n "$USER_A_ID" ]; then
 else
   ok "Admin grant (skipped — no user id)"
 fi
+
+# 31. Russian demo sentence — action router creates reminder
+echo "--- 31. Russian demo sentence (action router) ---"
+DEMO_MSG=$(curl -sf -X POST "$BASE_URL/api/sessions/$SESS_ID/messages" \
+  -H "Authorization: Bearer $TOKEN_A" \
+  -H 'Content-Type: application/json' \
+  -d '{"text":"Напомни завтра в 10 написать Ивану по договору и подготовь план встречи"}') || true
+echo "$DEMO_MSG" | grep -q '"sideEffects"' && ok "Action router: side effects returned" || fail "Action router" "$DEMO_MSG"
+echo "$DEMO_MSG" | grep -q '"reminderCreated"' && ok "Action router: reminder created from natural language" || fail "Action router reminder" "no reminderCreated in response"
+
+# 32. MCP status endpoint
+echo "--- 32. MCP status ---"
+MCP=$(curl -sf "$BASE_URL/api/opencode/mcp-status" -H "Authorization: Bearer $TOKEN_A") || true
+echo "$MCP" | grep -q '"servers"' && ok "MCP status endpoint" || fail "MCP status" "$MCP"
 
 echo ""
 echo "=== Results: $PASS passed, $FAIL failed ==="

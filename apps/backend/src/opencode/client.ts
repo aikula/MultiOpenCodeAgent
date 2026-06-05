@@ -24,6 +24,18 @@ export interface SkillInfo {
   source: string
 }
 
+export interface McpServerStatus {
+  name: string
+  type: string
+  status: string
+  tools?: Array<{ name: string; description?: string }>
+  error?: string
+}
+
+export interface McpStatusResult {
+  servers: McpServerStatus[]
+}
+
 export interface CommandInfo {
   id: string
   name: string
@@ -86,11 +98,43 @@ export class OpenCodeClient {
 
   async listSkills(input?: { workspacePath?: string }): Promise<SkillInfo[]> {
     try {
-      const res = await this.request('/command')
+      const res = await this.request('/skill')
       const data = await res.json()
-      return Array.isArray(data) ? data : data.commands ?? []
+      return Array.isArray(data) ? data : data.skills ?? []
     } catch {
       return []
+    }
+  }
+
+  async listMcpStatus(): Promise<McpStatusResult> {
+    try {
+      const res = await this.request('/mcp')
+      const data = await res.json() as Record<string, any>
+      const servers: McpServerStatus[] = []
+      if (Array.isArray(data)) {
+        for (const s of data) {
+          servers.push({
+            name: s.name ?? s.id ?? '',
+            type: s.type ?? 'remote',
+            status: s.status ?? 'unknown',
+            tools: s.tools ?? undefined,
+            error: s.error ?? undefined,
+          })
+        }
+      } else if (data.servers && Array.isArray(data.servers)) {
+        for (const s of data.servers) {
+          servers.push({
+            name: s.name ?? s.id ?? '',
+            type: s.type ?? 'remote',
+            status: s.status ?? 'unknown',
+            tools: s.tools ?? undefined,
+            error: s.error ?? undefined,
+          })
+        }
+      }
+      return { servers }
+    } catch {
+      return { servers: [] }
     }
   }
 

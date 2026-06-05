@@ -19,6 +19,7 @@ import { opencodeRoutes } from './routes/opencode.js'
 import { memoryRoutes } from './routes/memory.js'
 import { fileRoutes } from './routes/files.js'
 import { managerRoutes } from './routes/manager.js'
+import { skillUploadRoutes } from './routes/skill-upload.js'
 import { startTelegramBot } from './telegram/bot.js'
 import { startScheduler, setTelegramBot } from './services/scheduler.js'
 import { startPermissionGate } from './services/permission-gate.js'
@@ -79,6 +80,7 @@ app.register(opencodeRoutes)
 app.register(memoryRoutes)
 app.register(fileRoutes)
 app.register(managerRoutes)
+app.register(skillUploadRoutes)
 
 const telegramBot = startTelegramBot()
 if (telegramBot) setTelegramBot(telegramBot)

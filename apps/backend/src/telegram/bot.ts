@@ -8,11 +8,10 @@ import { users, telegramLinks, sessions, messages, workspaces, reminders, auditL
 import { getWorkspace, assertInsideWorkspace } from '../services/workspace.js'
 import { opencodeClient } from '../opencode/client.js'
 import { chargeQuota, getBalance } from '../services/quota.js'
-import { buildMessageContext } from '../services/message-context.js'
+import { processMessageThroughRouter } from '../services/action-router.js'
 import { env } from '../env.js'
 import { consumeLoginCode } from '../routes/auth.js'
 import {
-  buildDailyPlanContext,
   buildFindContext,
   buildMeetingBrief,
   buildVoiceActionSummary,
@@ -61,49 +60,20 @@ async function sendToSession(user: { id: string; defaultAgent: string | null; de
     return
   }
 
-  const msgId = uuid()
-  const now = new Date().toISOString()
-
-  db.insert(messages).values({
-    id: msgId,
-    userId: user.id,
-    sessionId: session.id,
-    role: 'user',
-    content: text,
-    channel: 'telegram',
-    createdAt: now,
-  }).run()
-
-  // Charge quota before calling OpenCode
+  // Charge quota before processing
   chargeQuota(user.id, 1, 'telegram_message')
 
-  let assistantContent = ''
   try {
-    const result = await opencodeClient.sendMessage({
-      workspacePath: ws.path,
-      opencodeSessionId: session.opencodeSessionId,
-      text: text + buildMessageContext(user.id).prompt,
-      agent: user.defaultAgent,
-      model: user.defaultModel,
-    })
-    assistantContent = result.content
+    const result = await processMessageThroughRouter(user.id, text, 'telegram')
+    let reply = result.assistantContent
+    if (result.sideEffects.length > 0) {
+      reply = result.sideEffects.join('\n') + '\n\n' + reply
+    }
+    await ctx.reply(reply.slice(0, 4000))
   } catch (err: any) {
-    assistantContent = `OpenCode error: ${err.message}`
     chargeQuota(user.id, -1, 'refund_opencode_error')
+    await ctx.reply(`Error: ${err.message}`)
   }
-
-  const assistantId = uuid()
-  db.insert(messages).values({
-    id: assistantId,
-    userId: user.id,
-    sessionId: session.id,
-    role: 'assistant',
-    content: assistantContent,
-    channel: 'telegram',
-    createdAt: new Date().toISOString(),
-  }).run()
-
-  await ctx.reply(assistantContent)
 }
 
 function parseReminderText(text: string): { title: string; remindAt: Date } | null {
@@ -439,55 +409,14 @@ export function startTelegramBot(): Telegraf | null {
       return
     }
 
-    const ws = getWorkspace(user.id)
-    if (!ws) { await ctx.reply('No workspace.'); return }
-    const session = getMainSession(user.id)
-    if (!session) { await ctx.reply('No main session.'); return }
-
-    const ctx_data = buildDailyPlanContext(user.id)
-    if (ctx_data.events.length === 0 && ctx_data.pendingReminders.length === 0 &&
-        ctx_data.recentMemory.length === 0 && ctx_data.recentMessages.length === 0) {
-      await ctx.reply(`Daily plan for ${ctx_data.date} (${ctx_data.timezone}):\n\nNo events, reminders, or recent context yet. Add some via Web UI or /remind /calendar.`)
-      return
-    }
-
     chargeQuota(user.id, 1, 'telegram_message')
-    let content = ''
     try {
-      const result = await opencodeClient.sendMessage({
-        workspacePath: ws.path,
-        opencodeSessionId: session.opencodeSessionId,
-        text: ctx_data.prompt,
-        agent: 'daily-plan',
-      })
-      content = result.content
+      const result = await processMessageThroughRouter(user.id, 'план на день', 'telegram')
+      await ctx.reply(result.assistantContent.slice(0, 4000))
     } catch (err: any) {
       chargeQuota(user.id, -1, 'refund_opencode_error')
-      await ctx.reply(`OpenCode error: ${err.message}`)
-      return
+      await ctx.reply(`Error: ${err.message}`)
     }
-
-    const msgId = uuid()
-    db.insert(messages).values({
-      id: msgId,
-      userId: user.id,
-      sessionId: session.id,
-      role: 'user',
-      content: '/daily',
-      channel: 'telegram',
-      createdAt: new Date().toISOString(),
-    }).run()
-    db.insert(messages).values({
-      id: uuid(),
-      userId: user.id,
-      sessionId: session.id,
-      role: 'assistant',
-      content,
-      channel: 'telegram',
-      createdAt: new Date().toISOString(),
-    }).run()
-
-    await ctx.reply(content.slice(0, 4000))
   })
 
   bot.command('find', async (ctx) => {
@@ -617,7 +546,7 @@ export function startTelegramBot(): Telegraf | null {
 
     try {
       const fileLink = await ctx.telegram.getFileLink(ctx.message.voice)
-      const response = await fetch(fileLink.toString(), proxyAgent ? { agent: proxyAgent as any } : {})
+      const response = await fetch(fileLink.toString(), proxyAgent ? { agent: proxyAgent } as any : undefined)
       const audioBuffer = Buffer.from(await response.arrayBuffer())
 
       const ws = getWorkspace(user.id)
@@ -665,7 +594,7 @@ export function startTelegramBot(): Telegraf | null {
       }
 
       const fileLink = await ctx.telegram.getFileLink(doc)
-      const response = await fetch(fileLink.toString(), proxyAgent ? { agent: proxyAgent as any } : {})
+      const response = await fetch(fileLink.toString(), proxyAgent ? { agent: proxyAgent } as any : undefined)
       const buffer = Buffer.from(await response.arrayBuffer())
 
       const filesDir = join(ws.path, 'files')
@@ -693,7 +622,7 @@ export function startTelegramBot(): Telegraf | null {
       const largest = photos[photos.length - 1]
 
       const fileLink = await ctx.telegram.getFileLink(largest)
-      const response = await fetch(fileLink.toString(), proxyAgent ? { agent: proxyAgent as any } : {})
+      const response = await fetch(fileLink.toString(), proxyAgent ? { agent: proxyAgent } as any : undefined)
       const buffer = Buffer.from(await response.arrayBuffer())
 
       const filesDir = join(ws.path, 'files')

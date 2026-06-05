@@ -51,6 +51,8 @@ const envSchema = z.object({
   MAX_FILE_SIZE_BYTES: z.coerce.number().default(52428800),
   MAX_USER_STORAGE_BYTES: z.coerce.number().default(524288000),
 
+  OPENCODE_SKILLS_DIR: z.string().optional(),
+
   ALLOW_DEMO_DELETION: z
     .enum(['true', 'false'])
     .transform(v => v === 'true')

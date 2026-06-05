@@ -158,3 +158,24 @@ export const userInstalledSkills = sqliteTable('user_installed_skills', {
   installedAt: text('installed_at').notNull(),
   enabled: integer('enabled', { mode: 'boolean' }).default(true),
 })
+
+export const inviteCodes = sqliteTable('invite_codes', {
+  id: text('id').primaryKey(),
+  codeHash: text('code_hash').unique().notNull(),
+  label: text('label'),
+  status: text('status', { enum: ['active', 'disabled', 'expired'] }).default('active'),
+  maxUses: integer('max_uses').default(1),
+  usedCount: integer('used_count').default(0),
+  expiresAt: text('expires_at'),
+  createdByUserId: text('created_by_user_id').references(() => users.id),
+  createdAt: text('created_at').notNull(),
+  updatedAt: text('updated_at').notNull(),
+})
+
+export const inviteCodeUses = sqliteTable('invite_code_uses', {
+  id: text('id').primaryKey(),
+  inviteCodeId: text('invite_code_id').notNull().references(() => inviteCodes.id),
+  userId: text('user_id').notNull().references(() => users.id),
+  email: text('email'),
+  usedAt: text('used_at').notNull(),
+})

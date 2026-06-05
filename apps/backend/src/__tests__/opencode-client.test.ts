@@ -7,7 +7,7 @@ describe('OpenCodeClient', () => {
 
   beforeEach(() => {
     mockFetch = vi.fn()
-    global.fetch = mockFetch
+    global.fetch = mockFetch as any
     client = new OpenCodeClient({
       baseUrl: 'http://opencode:4096',
       username: 'test',
@@ -46,7 +46,7 @@ describe('OpenCodeClient', () => {
     expect(result).toEqual([{ id: 'coder', title: 'Coder' }])
   })
 
-  it('listSkills() calls GET /command (OpenCode API route)', async () => {
+  it('listSkills() calls GET /skill (OpenCode API route)', async () => {
     mockFetch.mockResolvedValue({
       ok: true,
       json: () => Promise.resolve([]),
@@ -55,7 +55,7 @@ describe('OpenCodeClient', () => {
     await client.listSkills({ workspacePath: '/ws' })
 
     expect(mockFetch).toHaveBeenCalledWith(
-      expect.stringContaining('/command'),
+      expect.stringContaining('/skill'),
       expect.any(Object)
     )
   })

@@ -6,7 +6,7 @@ import { sessions, messages, workspaces } from '../db/schema.js'
 import { opencodeClient } from '../opencode/client.js'
 import { getWorkspace } from '../services/workspace.js'
 import { getBalance, chargeQuota } from '../services/quota.js'
-import { buildMessageContext } from '../services/message-context.js'
+import { processMessageThroughRouter } from '../services/action-router.js'
 import { sendMessageSchema } from '@moca/shared/validation'
 import { env } from '../env.js'
 
@@ -97,54 +97,23 @@ export async function sessionRoutes(app: FastifyInstance) {
       return reply.status(429).send({ error: 'Quota exceeded' })
     }
 
-    const msgId = uuid()
-    const now = new Date().toISOString()
-
-    db.insert(messages).values({
-      id: msgId,
-      userId: request.user.userId,
-      sessionId: id,
-      role: 'user',
-      content: body.text,
-      channel: 'web',
-      createdAt: now,
-    }).run()
-
-    // Charge quota before calling OpenCode
+    // Charge quota before processing
     chargeQuota(request.user.userId, 1, 'web_message')
 
-    let assistantContent = ''
-    let ocMessageId: string | null = null
-
     try {
-      const ctx = buildMessageContext(request.user.userId)
-      const enrichedText = body.text + ctx.prompt
-      const result = await opencodeClient.sendMessage({
-        workspacePath: ws.path,
-        opencodeSessionId: session.opencodeSessionId,
-        text: enrichedText,
-      })
-      assistantContent = result.content
-      ocMessageId = result.messageId
+      const result = await processMessageThroughRouter(request.user.userId, body.text, 'web', id)
+
+      return {
+        userMessage: result.userMsgId,
+        assistantMessage: result.assistantMsgId,
+        content: result.assistantContent,
+        sideEffects: result.sideEffects,
+        reminderCreated: result.reminderCreated,
+      }
     } catch (err: any) {
-      assistantContent = `OpenCode error: ${err.message}`
-      // Refund on OpenCode failure
       chargeQuota(request.user.userId, -1, 'refund_opencode_error')
+      return reply.status(500).send({ error: err.message })
     }
-
-    const assistantId = uuid()
-    db.insert(messages).values({
-      id: assistantId,
-      userId: request.user.userId,
-      sessionId: id,
-      role: 'assistant',
-      content: assistantContent,
-      channel: 'web',
-      opencodeMessageId: ocMessageId,
-      createdAt: new Date().toISOString(),
-    }).run()
-
-    return { userMessage: msgId, assistantMessage: assistantId, content: assistantContent }
   })
 
   app.post('/api/sessions/:id/main', {
