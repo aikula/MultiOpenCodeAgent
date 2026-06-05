@@ -289,3 +289,143 @@ Implemented the missing P2 demo polish items from `REVIEW_FIX_SPEC.md`:
 - Telegram bot responds to all 16 manager commands
 - Manager endpoints exposed at `/api/manager/*` for Web UI
 - Guided demo scenario documented in README (16 steps)
+
+---
+
+## Session: 2026-06-04 (P2 polish — manager service + demo flow + safety)
+
+### Step 9: Manager service and P2 demo polish
+
+Status: **completed**
+
+Implemented the missing P2 demo polish items from `REVIEW_FIX_SPEC.md`:
+
+- `services/manager.ts` — context builders for the four core manager skills.
+- `routes/manager.ts` — REST endpoints exposed to Web UI.
+- Updated Telegram bot with `/daily`, `/find`, `/meeting`, `/voice` commands.
+- Rewrote 4 central skills to describe the structured input they receive.
+- `scripts/seed-demo.ts` — seeds `demo@moca.local` with workspace, sessions, reminders, calendar events, memory items.
+- Expanded `smoke-test.sh` to 30 steps.
+- `scripts/run-smoke.sh` — spins up a local backend, runs the smoke test, cleans up.
+- Added `GET /api/me/workspace` for smoke-test workspace verification.
+- Updated `README.md` with a full 16-step guided demo scenario.
+
+#### Tests added (13 new, 64 total at this point)
+
+- `getTodayDate` returns `YYYY-MM-DD`.
+- `getTodayDate` falls back on unknown timezone.
+- `buildMeetingBrief` extracts English / Russian decisions.
+- `buildMeetingBrief` extracts action items with owner + deadline (per-sentence scan, then `extractDeadline()` helper).
+- `buildMeetingBrief` extracts risks and follow-ups.
+- `buildMeetingBrief` returns empty arrays on blank input.
+- `buildMeetingBrief` produces a non-empty prompt with raw notes.
+- `buildVoiceActionSummary` detects English / Russian triggers.
+- `buildVoiceActionSummary` returns no actions on plain prose.
+- `buildVoiceActionSummary` handles multiple sentences.
+- Two regex pattern regression tests for action extraction.
+- Permission gate decision matrix (22 new tests added later — see session 2026-06-05).
+
+#### Errors and fixes during this batch
+
+1. **Lazy regex captured single chars instead of full tasks** — `[^\.]+?` with optional deadline group was committing early because the optional group can fail. Refactored to two-step: extract per-sentence, then run `extractDeadline()` on the sentence.
+2. **`to` was too greedy in action verb alternation** — `"Anna to prepare"` polluted owner field. Removed `to` from alternation; engine matches stronger verbs.
+3. **`.env` not loaded from `apps/backend` cwd** — `dotenv.config()` looks for `.env` in `process.cwd()`. Fixed `env.ts` to walk up to 8 parent directories.
+4. **Vite content hash didn't change on rebuild** — Vite is deterministic by content. Browser may serve cached old version. **Hard reload** (Ctrl+Shift+R) required.
+5. **EADDRINUSE conflict with running `moca-backend` container** — `run-smoke.sh` spawns a local backend on port 3300.
+6. **Smoke test cleanup at wrong paths** — DB and workspaces were at `data/app.db` and `data/backend/workspaces/`. Cleanup updated to handle both layouts.
+
+---
+
+## Session: 2026-06-04 (production hardening: 500 on login, account deletion, admin)
+
+### Step 10: Auth error codes + Logout + Account deletion
+
+Status: **completed**
+
+- **`POST /api/auth/login`**: catches `Invalid credentials` → **401**, `Account blocked` → **403** (was 500 before).
+- **`POST /api/auth/register`**: catches `Email already registered` → **409** (was 500 before).
+- **Frontend `ApiError` class** in `apps/frontend/src/api/client.ts`: parses `data.error` / `data.message` from server response, surfaces in `Error.message`. Redirect to `/login` only when token was present (not from login/register page itself).
+- **`DELETE /api/me`** (account deletion): requires password, cascades all related rows in SQLite transaction, removes workspace dir from disk, nulls `audit_log.actor_user_id` (preserves audit trail).
+- **Settings UI**: explicit "Log out" button in page header, "Danger Zone" with "Type DELETE to confirm" pattern.
+- **Admin promotion for aikula** via direct DB update (was needed to test admin features).
+- **Test setup rewrite**: `__tests__/setup.ts` now auto-sets `DATABASE_URL=file:./data/test.db`, deletes stale DB, runs migrations. Without this, new tests using DB got "no such table" errors.
+
+Tests: **69/69 pass** (5 new for `account-delete`).
+
+---
+
+## Session: 2026-06-04 (operations: file management + Telegram login code + FireWorks provider)
+
+### Step 11: Operational features and provider wiring
+
+- **File management UI + Telegram commands** (`/files`, `/sendfile`): list directories, download, view.
+- **Telegram login code section in Settings page**: generate one-time code, `/login <code>` in Telegram.
+- **Telegram proxy for Russia**: routed through HTTPS proxy at `107.173.19.16:3128` to bypass Telegram API blocks.
+- **Traefik routing**: moca-frontend on tghub-network, Traefik labels for `openagent.kulinich.ru`.
+- **FireWorks provider**: `fireworks-ai/deepseek-v4-flash` as default. Key passed via `FIREWORKS_API_KEY` env in docker-compose.
+- **OpenCode server in Docker Compose**: separate container, Basic auth, `OPENCODE_SERVER_PASSWORD`.
+- **STT integration with GigaAM Voice API**: lazy polling, voice message → transcript → send to main session.
+
+---
+
+## Session: 2026-06-05 (security: permission gate + per-user isolation)
+
+### Step 12: OpenCode Permissions API gating (ADR-002/003/004/005)
+
+Status: **completed**
+
+**The problem:** OpenCode is single-tenant by design — one WORKDIR per process. All workspaces mounted at `/workspaces/u_<uuid>/` were visible to all users. Needed proper isolation without per-user OpenCode instances.
+
+**The solution:** OpenCode's `permission.asked` event via `/global/event` SSE, intercepted by a permission gate in the backend.
+
+**Implementation (`apps/backend/src/services/permission-gate.ts`):**
+1. Subscribes to `OpenCode /global/event` SSE on backend startup
+2. On `permission.asked` event, looks up user via `sessions.opencode_session_id`
+3. Decides `allow/deny` based on:
+   - `external_directory`: `filepath` matches user's UUID
+   - `bash`: command references user workspace OR safe read-only
+   - `read/edit/write/glob/grep`: allow once
+   - `webfetch/websearch`: reject (web disabled)
+4. Responds via `POST /session/:id/permissions/:permissionID` with `{response: "once"|"always"|"reject"}`
+5. Logs every decision to `/tmp/moca-perm/audit.log` as JSON Lines
+6. Auto-reconnect with exponential backoff (1s → 30s)
+
+**Two bugs found and fixed during this session:**
+1. **`resolveContext` queried wrong column** — looked up by `sessions.id` (internal) instead of `sessions.opencode_session_id` (OpenCode ID). All permission requests returned "no user context → reject". Fixed and added regression test.
+2. **Cross-container path mismatch** — DB stores workspace as `/app/data/workspaces/u_<uuid>/` but OpenCode sees `/workspaces/u_<uuid>/`. UUID extraction regex added; both `isWithinWorkspaceForTest` cases covered.
+
+**OpenCode config** (`apps/opencode/opencode.json`): `external_directory: {"*": "ask"}` — every external path triggers permission event.
+
+**Tests added (22 new, 99 total):**
+- `isWithinWorkspace` exact/subpath/sibling/partial-prefix/trailing-slash
+- `isWithinWorkspace` cross-container UUID matching (positive and negative)
+- `decidePermission` external_directory: own path, sibling path, `/etc/`, parent dir, missing data, no workspace
+- `decidePermission` bash: workspace reference, safe read-only, sibling workspace, `rm /`, `/etc/`
+- `decidePermission` other tools: read, webfetch, websearch, unknown
+- `resolveContext` regression test (looks up by OpenCode ID, not internal)
+
+**Live verification (4 cases):**
+| Scenario | Result | Audit |
+|---|---|---|
+| Read own AGENTS.md | ✅ Read (5.9s) | `once — path within user workspace` |
+| Read other user file | ❌ "Это файл другого пользователя" (1.7s) | `reject — path outside user workspace` |
+| Bash other user dir | ❌ "Запрещено" (1.2s) | `reject — bash command touches another user's workspace` |
+| Bash own dir | ✅ "Один файл: report.pdf" (2.0s) | `once — path within user workspace` |
+
+**Docs:** Added `AGENTS.md` (top-level) and `docs/DECISIONS.md` (ADR-001 to ADR-012).
+
+---
+
+## Final project status (2026-06-05)
+
+- **99/99 unit tests pass** (Vitest)
+- **30/30 smoke tests pass** (`scripts/run-smoke.sh`)
+- Build OK (esbuild for backend, vite for frontend)
+- All 3 containers healthy: `moca-backend`, `moca-opencode`, `moca-frontend`
+- https://openagent.kulinich.ru/ → React SPA (200 OK via Traefik)
+- Permission gate active: every tool call audited in `/tmp/moca-perm/audit.log`
+- Demo user `demo@moca.local` seeded in container DB
+- User `andrey.kulinich@gmail.com` promoted to `role=admin`, password reset to `admin2026!`
+- 12 manager skills in central catalog; manager endpoints at `/api/manager/*`
+- Telegram bot running with 16 manager commands
+

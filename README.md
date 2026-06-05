@@ -19,10 +19,13 @@ The project goal is to quickly demonstrate useful manager workflows through agen
 
 Start here:
 
-1. [`docs/DEVELOPMENT_SPEC.md`](docs/DEVELOPMENT_SPEC.md) — main development specification for the coding agent.
-2. [`docs/SKILLS_AGENTS_AND_MARKETPLACE.md`](docs/SKILLS_AGENTS_AND_MARKETPLACE.md) — mandatory rules for OpenCode default agents, default skills, custom skills and skill-market import.
-3. [`docs/IMPLEMENTATION_PLAN.md`](docs/IMPLEMENTATION_PLAN.md) — implementation phases, checklists and acceptance criteria.
-4. [`docs/CODE_AGENT_INSTRUCTIONS.md`](docs/CODE_AGENT_INSTRUCTIONS.md) — direct instructions for the coding agent.
+- [`AGENTS.md`](AGENTS.md) — top-level project context: how to run, architecture, conventions, runbook
+- [`docs/DECISIONS.md`](docs/DECISIONS.md) — accepted architecture / operational decisions (read this when changing anything)
+- [`docs/DEVELOPMENT_SPEC.md`](docs/DEVELOPMENT_SPEC.md) — main development specification for the coding agent
+- [`docs/SKILLS_AGENTS_AND_MARKETPLACE.md`](docs/SKILLS_AGENTS_AND_MARKETPLACE.md) — mandatory rules for OpenCode default agents, default skills, custom skills and skill-market import
+- [`docs/IMPLEMENTATION_PLAN.md`](docs/IMPLEMENTATION_PLAN.md) — implementation phases, checklists and acceptance criteria
+- [`docs/DEV_LOG.md`](docs/DEV_LOG.md) — chronological implementation log
+- [`docs/CODE_AGENT_INSTRUCTIONS.md`](docs/CODE_AGENT_INSTRUCTIONS.md) — direct instructions for the coding agent (symlinked as `CLAUDE.md`)
 
 ## Core architectural decision
 
@@ -170,4 +173,4 @@ Pass criteria: 30 passed, 0 failed.
 npm test
 ```
 
-64 unit tests cover OpenCode client mapping, workspace isolation, quota refill, admin allowlist, marketplace scanner, reminder parser, manager context builders, and skill slug validation.
+99 unit tests cover OpenCode client mapping, workspace isolation, quota refill, admin allowlist, marketplace scanner, reminder parser, manager context builders, account deletion cascade, message context enrichment, permission gate decision logic, and skill slug validation.
