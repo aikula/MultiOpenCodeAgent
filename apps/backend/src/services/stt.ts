@@ -39,7 +39,7 @@ export async function transcribeAudio(audioBuffer: Buffer, filename: string): Pr
 
   // Build multipart form data
   const formData = new FormData()
-  formData.append('file', new Blob([audioBuffer]), filename)
+  formData.append('file', new Blob([new Uint8Array(audioBuffer)]), filename)
 
   // Submit transcription job
   const submitRes = await fetch(`${env.STT_API_URL}`, {

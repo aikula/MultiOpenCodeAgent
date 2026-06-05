@@ -48,8 +48,13 @@ export async function reminderRoutes(app: FastifyInstance) {
       return { error: 'Not found' }
     }
 
+    const updates: Record<string, unknown> = {}
+    if (body.title !== undefined) updates.title = body.title
+    if (body.description !== undefined) updates.description = body.description
+    if (body.status !== undefined) updates.status = body.status as 'scheduled' | 'sent' | 'cancelled'
+
     db.update(reminders)
-      .set(body)
+      .set(updates)
       .where(eq(reminders.id, id))
       .run()
 

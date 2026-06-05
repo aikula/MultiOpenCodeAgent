@@ -13,3 +13,13 @@ declare module 'fastify' {
     }
   }
 }
+
+declare module '@fastify/jwt' {
+  interface FastifyJWT {
+    payload: {
+      userId: string
+      email: string
+      role: 'user' | 'admin'
+    }
+  }
+}

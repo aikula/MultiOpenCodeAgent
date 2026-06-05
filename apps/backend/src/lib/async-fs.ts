@@ -1,5 +1,6 @@
 import { execFile } from 'child_process'
 import { readFile, writeFile, mkdir, rm, readdir, stat, rename } from 'fs/promises'
+import { type Dirent } from 'fs'
 import { join } from 'path'
 
 export async function readFileAsync(path: string, encoding: BufferEncoding = 'utf-8'): Promise<string> {
@@ -11,20 +12,25 @@ export async function writeFileAsync(path: string, data: string | Buffer): Promi
 }
 
 export async function mkdirAsync(path: string, options?: { recursive?: boolean }): Promise<void> {
-  return mkdir(path, options)
+  await mkdir(path, options)
 }
 
 export async function rmAsync(path: string, options?: { recursive?: boolean; force?: boolean }): Promise<void> {
   return rm(path, options)
 }
 
-export async function readdirAsync(path: string, options?: { withFileTypes?: boolean }) {
-  return readdir(path, options)
+export function readdirAsync(path: string, options: { withFileTypes: true }): Promise<Dirent[]>
+export function readdirAsync(path: string, options?: { withFileTypes?: false }): Promise<string[]>
+export async function readdirAsync(path: string, options?: { withFileTypes?: boolean }): Promise<string[] | Dirent[]> {
+  if (options?.withFileTypes) {
+    return readdir(path, { withFileTypes: true })
+  }
+  return readdir(path)
 }
 
 export async function execAsync(command: string, args: string[], cwd: string): Promise<void> {
   return new Promise((resolve, reject) => {
-    execFile(command, args, { cwd, stdio: 'pipe' }, (err) => {
+    execFile(command, args, { cwd }, (err: Error | null) => {
       if (err) reject(err)
       else resolve()
     })

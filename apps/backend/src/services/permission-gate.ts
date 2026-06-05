@@ -107,8 +107,8 @@ function resolveContext(opencodeSessionId: string): PermissionContext | null {
 
   return {
     userId: user.id,
-    userEmail: user.email,
-    userRole: user.role,
+    userEmail: user.email ?? '',
+    userRole: user.role ?? 'user',
     workspacePath: ws?.path ?? null,
   }
 }

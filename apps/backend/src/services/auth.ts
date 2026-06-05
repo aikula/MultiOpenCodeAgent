@@ -39,12 +39,12 @@ export async function loginUser(email: string, password: string) {
 
   return {
     userId: user.id,
-    email: user.email,
-    role: user.role,
+    email: user.email ?? '',
+    role: (user.role ?? 'user') as 'user' | 'admin',
     displayName: user.displayName,
   }
 }
 
-export function generateToken(app: FastifyInstance, payload: { userId: string; email: string; role: string }) {
+export function generateToken(app: FastifyInstance, payload: { userId: string; email: string; role: 'user' | 'admin' }) {
   return app.jwt.sign(payload, { expiresIn: '7d' })
 }
