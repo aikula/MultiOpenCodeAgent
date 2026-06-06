@@ -85,6 +85,35 @@ export const api = {
     request(`/skills/${slug}`, { method: 'PUT', body: JSON.stringify({ content }) }),
   deleteSkill: (slug: string) =>
     request(`/skills/${slug}`, { method: 'DELETE' }),
+  formatSkill: (name: string, description: string, plainText: string) =>
+    request('/skills/format', { method: 'POST', body: JSON.stringify({ name, description, plainText }) }),
+  uploadSkillArchive: async (file: File) => {
+    const token = getToken()
+    const formData = new FormData()
+    formData.append('file', file)
+    const res = await fetch(`${BASE}/skills/upload-archive`, {
+      method: 'POST',
+      headers: token ? { 'Authorization': `Bearer ${token}` } : {},
+      body: formData,
+    })
+    if (res.status === 401) { localStorage.removeItem('token'); window.location.href = '/login' }
+    return res.json()
+  },
+  adminUploadSkillArchive: async (file: File, scope: string = 'global', targetUserId?: string) => {
+    const token = getToken()
+    const formData = new FormData()
+    formData.append('file', file)
+    formData.append('scope', scope)
+    if (targetUserId) formData.append('targetUserId', targetUserId)
+    const res = await fetch(`${BASE}/admin/skills/upload-archive`, {
+      method: 'POST',
+      headers: token ? { 'Authorization': `Bearer ${token}` } : {},
+      body: formData,
+    })
+    if (res.status === 401) { localStorage.removeItem('token'); window.location.href = '/login' }
+    return res.json()
+  },
+  adminSkillStartupCheck: () => request('/admin/skills/startup-check'),
 
   // Reminders
   listReminders: () => request('/reminders'),

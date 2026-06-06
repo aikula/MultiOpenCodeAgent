@@ -527,3 +527,29 @@ Reference: `docs/MOCA_hotfix_strict_agent_mode.md`
 - 116/116 unit tests pass
 - 0 TypeScript errors
 - Frontend builds successfully
+
+---
+
+## Session: 2026-06-06 (Issue #2 — skill UX and validation gaps)
+
+Reference: GitHub issue #2
+
+### Changes applied
+
+1. **SKILL.md format validation in skill routes**: Wired `validateSkillMd()` into `POST /api/skills` and `PUT /api/skills/:slug`. Returns 400 with `{ error, details }` for invalid format.
+
+2. **"Format as Skill" button in Skills UI**: Expands a form where user enters name, description, plain text. Calls `POST /api/skills/format`, fills the editor with the result.
+
+3. **ZIP upload controls**: Skills page — file input + upload button calling `POST /api/skills/upload-archive`. Admin catalogs tab — file input + upload button calling `POST /api/admin/skills/upload-archive`. Both show installed/rejected results.
+
+4. **Validation errors in Skills UI**: Error banner (red) shows validation details. Success banner (green) on create/update/delete. Error messages parsed from ApiError.details.
+
+5. **Startup-check button in Admin UI**: Diagnostics tab now has "Check skills" button calling `GET /api/admin/skills/startup-check`, result shown in JSON viewer.
+
+6. **Tests**: Added 11 tests for `validateSkillMd` (empty, no frontmatter, missing name/description, invalid name, empty body, too large, description too long) and `formatPlainTextAsSkill`.
+
+### Verification
+
+- 127/127 unit tests pass
+- 0 TypeScript errors
+- Frontend builds successfully

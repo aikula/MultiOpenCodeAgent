@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { api } from '../api/client'
 
 interface User {
@@ -43,6 +43,9 @@ export function AdminPage() {
   const [quotaAmount, setQuotaAmount] = useState('10')
   const [catalogName, setCatalogName] = useState('')
   const [catalogUrl, setCatalogUrl] = useState('')
+  const [startupCheck, setStartupCheck] = useState<Record<string, any> | null>(null)
+  const adminZipRef = useRef<HTMLInputElement>(null)
+  const [adminUploadResult, setAdminUploadResult] = useState<{ installed: string[]; rejected: string[] } | null>(null)
 
   const loadUsers = async () => {
     const data = await api.adminListUsers()
@@ -239,14 +242,30 @@ export function AdminPage() {
       )}
 
       {tab === 'diagnostics' && (
-        <div>
-          <button onClick={async () => {
-            try { setDiagnostics(await api.adminDiagnostics()) } catch { setDiagnostics({ error: 'Failed to run diagnostics' }) }
-          }} className="bg-blue-600 text-white rounded px-4 py-2 text-sm mb-4">Run diagnostics</button>
+        <div className="space-y-4">
+          <div>
+            <button onClick={async () => {
+              try { setDiagnostics(await api.adminDiagnostics()) } catch { setDiagnostics({ error: 'Failed to run diagnostics' }) }
+            }} className="bg-blue-600 text-white rounded px-4 py-2 text-sm mr-2">Run diagnostics</button>
+            <button onClick={async () => {
+              try { setStartupCheck(await api.adminSkillStartupCheck()) } catch { setStartupCheck({ error: 'Failed to run startup check' }) }
+            }} className="bg-green-600 text-white rounded px-4 py-2 text-sm">Check skills</button>
+          </div>
           {diagnostics && (
-            <pre className="bg-gray-50 rounded p-4 text-xs overflow-auto max-h-[32rem]">
-              {JSON.stringify(diagnostics, null, 2)}
-            </pre>
+            <div>
+              <h3 className="text-sm font-semibold mb-1">Diagnostics</h3>
+              <pre className="bg-gray-50 rounded p-4 text-xs overflow-auto max-h-[32rem]">
+                {JSON.stringify(diagnostics, null, 2)}
+              </pre>
+            </div>
+          )}
+          {startupCheck && (
+            <div>
+              <h3 className="text-sm font-semibold mb-1">Skill Startup Check</h3>
+              <pre className="bg-gray-50 rounded p-4 text-xs overflow-auto max-h-[32rem]">
+                {JSON.stringify(startupCheck, null, 2)}
+              </pre>
+            </div>
           )}
         </div>
       )}
@@ -260,7 +279,32 @@ export function AdminPage() {
               placeholder="Source URL (optional)" className="border border-gray-300 rounded px-3 py-2 text-sm flex-1" />
             <button onClick={addCatalog} className="bg-blue-600 text-white rounded px-4 py-2 text-sm">Add</button>
           </div>
-          <p className="text-gray-400 text-sm">Manage skill catalogs for marketplace import.</p>
+          <div className="border-t border-gray-200 pt-4 mt-4">
+            <h3 className="text-sm font-semibold mb-2">Upload skill archive (admin)</h3>
+            <p className="text-xs text-gray-500 mb-2">ZIP with SKILL.md files. Installs to global skills directory.</p>
+            <div className="flex gap-2 items-center">
+              <input ref={adminZipRef} type="file" accept=".zip" className="text-sm" />
+              <button onClick={async () => {
+                const file = adminZipRef.current?.files?.[0]
+                if (!file) return
+                try {
+                  const result = await api.adminUploadSkillArchive(file)
+                  setAdminUploadResult(result)
+                } catch { setAdminUploadResult({ installed: [], rejected: ['Upload failed'] }) }
+                if (adminZipRef.current) adminZipRef.current.value = ''
+              }} className="bg-blue-600 text-white rounded px-4 py-2 text-sm">Upload</button>
+            </div>
+            {adminUploadResult && (
+              <div className="mt-2 text-xs">
+                {adminUploadResult.installed?.length > 0 && (
+                  <p className="text-green-700">Installed: {adminUploadResult.installed.join(', ')}</p>
+                )}
+                {adminUploadResult.rejected?.length > 0 && (
+                  <p className="text-red-600">Rejected: {adminUploadResult.rejected.join('; ')}</p>
+                )}
+              </div>
+            )}
+          </div>
         </div>
       )}
 

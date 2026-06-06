@@ -4,6 +4,7 @@ import { join } from 'path'
 import { db } from '../db/index.js'
 import { getWorkspace, assertInsideWorkspace } from '../services/workspace.js'
 import { readFileAsync, writeFileAsync, mkdirAsync, rmAsync, readdirAsync, commitToWorkspace } from '../lib/async-fs.js'
+import { validateSkillMd } from '../services/skill-format.js'
 
 const SKILL_SLUG_RE = /^[a-z0-9][a-z0-9-]{1,60}$/
 const MAX_SKILL_SIZE = 100_000
@@ -45,6 +46,11 @@ export async function skillRoutes(app: FastifyInstance) {
     }
     if (content.length > MAX_SKILL_SIZE) {
       return reply.status(400).send({ error: `Skill content exceeds max size of ${MAX_SKILL_SIZE} bytes` })
+    }
+
+    const validation = validateSkillMd(content)
+    if (!validation.valid) {
+      return reply.status(400).send({ error: 'Invalid SKILL.md format', details: validation.errors })
     }
 
     const ws = getWorkspace(request.user.userId)
@@ -97,6 +103,11 @@ export async function skillRoutes(app: FastifyInstance) {
     }
     if (content.length > MAX_SKILL_SIZE) {
       return reply.status(400).send({ error: `Skill content exceeds max size of ${MAX_SKILL_SIZE} bytes` })
+    }
+
+    const validation = validateSkillMd(content)
+    if (!validation.valid) {
+      return reply.status(400).send({ error: 'Invalid SKILL.md format', details: validation.errors })
     }
 
     const ws = getWorkspace(request.user.userId)
