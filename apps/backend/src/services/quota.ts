@@ -25,17 +25,24 @@ export function grantWelcomeQuota(userId: string) {
 }
 
 export function chargeQuota(userId: string, amount: number, reason: string) {
-  const balance = getBalance(userId)
-  if (balance < amount) throw new Error('Insufficient quota')
+  db.transaction((tx) => {
+    const result = tx
+      .select({ total: sql<number>`COALESCE(SUM(${quotaLedger.delta}), 0)` })
+      .from(quotaLedger)
+      .where(eq(quotaLedger.userId, userId))
+      .get()
+    const balance = result?.total ?? 0
+    if (balance < amount) throw new Error('Insufficient quota')
 
-  const now = new Date().toISOString()
-  db.insert(quotaLedger).values({
-    id: uuid(),
-    userId,
-    delta: -amount,
-    reason,
-    createdAt: now,
-  }).run()
+    const now = new Date().toISOString()
+    tx.insert(quotaLedger).values({
+      id: uuid(),
+      userId,
+      delta: -amount,
+      reason,
+      createdAt: now,
+    }).run()
+  })
 }
 
 export function grantQuota(userId: string, amount: number, reason: string, metadata?: object) {

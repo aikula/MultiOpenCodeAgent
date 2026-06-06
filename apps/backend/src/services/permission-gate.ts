@@ -160,21 +160,32 @@ function decidePermission(
   if (permission === 'bash') {
     const command = metadata.command ?? ''
     const userWs = ctx.workspacePath
-    if (command.includes(userWs)) {
-      return { response: 'once', reason: 'bash command references user workspace path' }
+
+    // Extract all absolute paths from the command
+    const pathMatches = command.match(/(?:\/[\w.\-]+)+/g) ?? []
+    const userWsUuid = userWs.match(/\/(u_[a-f0-9]+)/i)?.[1]?.toLowerCase()
+
+    // Check every absolute path in the command
+    for (const p of pathMatches) {
+      if (p === '/bin' || p === '/usr' || p.startsWith('/usr/') || p.startsWith('/bin/') || p.startsWith('/tmp/')) continue
+      if (isWithinWorkspace(userWs, p)) continue
+      // Path is outside workspace — reject unless it's an innocuous system path
+      return { response: 'reject', reason: `bash command references path outside workspace: ${p}` }
     }
-    const pathRegex = /(?:\/workspaces\/u[_-]?[a-z0-9]+|\/ws\/u[_-]?[a-z0-9]+)/i
-    if (pathRegex.test(command)) {
-      return { response: 'reject', reason: `bash command touches another user's workspace: ${command.slice(0, 80)}` }
-    }
+
+    // No absolute paths referencing outside dirs. Allow read-only commands.
     if (
-      /^(ls|cat|head|tail|stat|file|wc|grep)(\s|$)/.test(command) &&
-      !command.includes('/etc/') &&
-      !command.includes('/var/') &&
+      /^(ls|cat|head|tail|stat|file|wc|grep|echo|pwd|whoami|date)(\s|$)/.test(command) &&
       !command.includes(' / ')
     ) {
       return { response: 'once', reason: 'safe read-only command' }
     }
+
+    // Commands explicitly referencing user workspace
+    if (command.includes(userWs) || (userWsUuid && command.includes(userWsUuid))) {
+      return { response: 'once', reason: 'bash command references user workspace path' }
+    }
+
     return { response: 'reject', reason: `bash command not in user workspace: ${command.slice(0, 80)}` }
   }
 

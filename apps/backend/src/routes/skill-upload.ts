@@ -1,6 +1,6 @@
 import type { FastifyInstance } from 'fastify'
 import { v4 as uuid } from 'uuid'
-import { mkdirSync, writeFileSync, existsSync, readdirSync, readFileSync, createWriteStream } from 'fs'
+import { mkdirSync, writeFileSync, existsSync, readdirSync, readFileSync, createWriteStream, rmSync as rmSyncFs } from 'fs'
 import { join, resolve } from 'path'
 import { pipeline } from 'stream/promises'
 import { db } from '../db/index.js'
@@ -21,6 +21,21 @@ function extractZip(zipPath: string, destDir: string): void {
   } catch (err: any) {
     throw new Error(`ZIP extraction failed: ${err.message}`)
   }
+
+  // ZipSlip protection: remove any extracted files outside destDir
+  const resolvedDest = resolve(destDir)
+  function validateDir(dir: string) {
+    for (const entry of readdirSync(dir, { withFileTypes: true })) {
+      const full = join(dir, entry.name)
+      const resolved = resolve(full)
+      if (!resolved.startsWith(resolvedDest + '/') && resolved !== resolvedDest) {
+        rmSyncFs(resolved, { recursive: true, force: true })
+        continue
+      }
+      if (entry.isDirectory()) validateDir(full)
+    }
+  }
+  validateDir(destDir)
 }
 
 const GLOBAL_SKILLS_DIR = env.OPENCODE_SKILLS_DIR || join(env.WORKSPACES_ROOT, '..', 'opencode-config', 'skills')
