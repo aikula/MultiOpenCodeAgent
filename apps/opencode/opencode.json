@@ -42,8 +42,8 @@
     }
   },
   "instructions": [
-    "STRICT AGENT MODE: users should communicate in natural language. Do not require slash commands for supported manager actions.",
-    "When a user asks for a reminder, calendar event, search, meeting brief, decision log, risk review, email draft or daily plan, perform the supported action or ask the backend orchestrator for the action path. Do not merely tell the user to open another page.",
+    "STRICT AGENT MODE: all backend regex triggers are disabled. You must use skills for every action. Users communicate in natural language — no special syntax or slash commands required.",
+    "When a user asks for a reminder, calendar event, search, meeting brief, decision log, risk review, email draft or daily plan, use the matching skill. If no skill matches, give the best useful answer and clearly state what could not be executed.",
     "Use the available skill tool when a matching central or project skill exists.",
     "When you need current technical documentation, use context7 tools if available.",
     "When you need public GitHub implementation examples, use gh_grep if available.",

@@ -500,3 +500,30 @@ Status: **completed**
 - Skill ZIP upload functional
 - Docker entrypoint seeds bundled skills on first boot
 
+---
+
+## Session: 2026-06-06 (Hotfix: strict agent-only mode)
+
+Reference: `docs/MOCA_hotfix_strict_agent_mode.md`
+
+### Changes applied
+
+1. **Action router → passthrough**: `services/action-router.ts` rewritten. `routeAction()` is now identity (returns original text, no side effects). `processMessageThroughRouter()` sends `[AGENT_ONLY_MODE]` prompt block instructing the manager agent to interpret requests naturally through skills. No backend regex triggers remain.
+
+2. **Telegram bot cleanup**: Removed 8 manager demo commands (`/remind`, `/calendar`, `/daily`, `/find`, `/meeting`, `/voice`, `/files`, `/sendfile`), `parseReminderText()` helper, `on('document')` and `on('photo')` handlers. Updated `/help` text to reflect natural language mode. Service commands kept: `/start`, `/login`, `/help`, `/sessions`, `/new`, `/use`, `/main`, `/limits`, `/settings`.
+
+3. **Admin diagnostics**: Added `GET /api/admin/diagnostics` endpoint (openCodeHealth, agents check, skills, mcp, skillStartup, database counts). Frontend "Diagnostics" tab with "Run diagnostics" button and JSON viewer.
+
+4. **Admin UI fixes**: Removed duplicate MCP Server Status header. Fixed unclosed `<div>` in MCP tab.
+
+5. **Layout visibility**: Renamed "Logout" → "Log out". Added red "Delete profile..." link in sidebar.
+
+6. **OpenCode instructions**: Updated `opencode.json` to explicitly state backend regex triggers are disabled and agent must use skills.
+
+7. **Tests**: Rewrote `action-router.test.ts` to test passthrough behavior (7 tests). Fixed `message-context.test.ts` timezone-dependent calendar assertion. Removed `reminderCreated` from sessions route response (no longer exists).
+
+### Verification
+
+- 116/116 unit tests pass
+- 0 TypeScript errors
+- Frontend builds successfully

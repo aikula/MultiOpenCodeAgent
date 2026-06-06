@@ -3,10 +3,12 @@ import { eq } from 'drizzle-orm'
 import { v4 as uuid } from 'uuid'
 import { z } from 'zod'
 import { db } from '../db/index.js'
-import { users, quotaLedger, telegramLinks, auditLog, inviteCodes } from '../db/schema.js'
+import { users, quotaLedger, telegramLinks, auditLog, inviteCodes, sessions, reminders, calendarEvents, memoryItems } from '../db/schema.js'
 import { adminMiddleware } from '../middleware/auth.js'
 import { grantQuota } from '../services/quota.js'
 import { createInviteCode } from '../services/invites.js'
+import { opencodeClient } from '../opencode/client.js'
+import { runSkillStartupCheck } from '../services/skill-startup-check.js'
 
 const adminUpdateUserSchema = z.object({
   displayName: z.string().max(100).nullable().optional(),
@@ -228,5 +230,64 @@ export async function adminRoutes(app: FastifyInstance) {
       .where(eq(inviteCodes.id, id))
       .run()
     return { ok: true }
+  })
+
+  app.get('/api/admin/diagnostics', {
+    preHandler: [adminMiddleware],
+  }, async () => {
+    const result: Record<string, any> = {
+      time: new Date().toISOString(),
+      checks: {},
+    }
+
+    try {
+      result.checks.openCodeHealth = await opencodeClient.health()
+    } catch (err: any) {
+      result.checks.openCodeHealth = { ok: false, error: err.message }
+    }
+
+    try {
+      const agents = await opencodeClient.listAgents()
+      result.checks.agents = {
+        ok: agents.some((a: any) => a.id === 'manager' || a.name === 'manager'),
+        count: agents.length,
+        items: agents,
+      }
+    } catch (err: any) {
+      result.checks.agents = { ok: false, error: err.message }
+    }
+
+    try {
+      const skills = await opencodeClient.listSkills()
+      result.checks.skills = {
+        ok: Array.isArray(skills) && skills.length > 0,
+        count: Array.isArray(skills) ? skills.length : 0,
+        items: skills,
+      }
+    } catch (err: any) {
+      result.checks.skills = { ok: false, error: err.message }
+    }
+
+    try {
+      result.checks.mcp = await opencodeClient.listMcpStatus()
+    } catch (err: any) {
+      result.checks.mcp = { ok: false, error: err.message }
+    }
+
+    try {
+      result.checks.skillStartup = runSkillStartupCheck()
+    } catch (err: any) {
+      result.checks.skillStartup = { ok: false, error: err.message }
+    }
+
+    result.checks.database = {
+      users: db.select().from(users).all().length,
+      sessions: db.select().from(sessions).all().length,
+      reminders: db.select().from(reminders).all().length,
+      calendarEvents: db.select().from(calendarEvents).all().length,
+      memoryItems: db.select().from(memoryItems).all().length,
+    }
+
+    return result
   })
 }

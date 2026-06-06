@@ -2,21 +2,16 @@ import { Telegraf, type Context } from 'telegraf'
 import { eq } from 'drizzle-orm'
 import { v4 as uuid } from 'uuid'
 import { HttpsProxyAgent } from 'https-proxy-agent'
-import { join, resolve } from 'path'
+import { join } from 'path'
 import { db } from '../db/index.js'
-import { users, telegramLinks, sessions, messages, workspaces, reminders, auditLog } from '../db/schema.js'
-import { getWorkspace, assertInsideWorkspace } from '../services/workspace.js'
+import { users, telegramLinks, sessions, messages, workspaces, auditLog } from '../db/schema.js'
+import { getWorkspace } from '../services/workspace.js'
 import { opencodeClient } from '../opencode/client.js'
 import { chargeQuota, getBalance } from '../services/quota.js'
 import { processMessageThroughRouter } from '../services/action-router.js'
 import { env } from '../env.js'
 import { consumeLoginCode } from '../routes/auth.js'
-import {
-  buildFindContext,
-  buildMeetingBrief,
-  buildVoiceActionSummary,
-} from '../services/manager.js'
-import { writeFileAsync, mkdirAsync, readdirAsync, statAsync } from '../lib/async-fs.js'
+import { writeFileAsync, mkdirAsync } from '../lib/async-fs.js'
 
 let bot: Telegraf | null = null
 
@@ -32,97 +27,6 @@ function getUserByTelegramId(telegramUserId: string) {
   if (!user || user.status === 'blocked') return null
 
   return user
-}
-
-function getMainSession(userId: string) {
-  return db.select().from(sessions)
-    .where(eq(sessions.userId, userId))
-    .all()
-    .find(s => s.isMain && s.status === 'active')
-}
-
-async function sendToSession(user: { id: string; defaultAgent: string | null; defaultModel: string | null }, text: string, ctx: Context) {
-  const session = getMainSession(user.id)
-  if (!session) {
-    await ctx.reply('No main session found. Create one via /new or Web UI first.')
-    return
-  }
-
-  const ws = getWorkspace(user.id)
-  if (!ws) {
-    await ctx.reply('Workspace not found.')
-    return
-  }
-
-  const balance = getBalance(user.id)
-  if (balance <= 0) {
-    await ctx.reply('Quota exceeded. Contact admin for more.')
-    return
-  }
-
-  // Charge quota before processing
-  chargeQuota(user.id, 1, 'telegram_message')
-
-  try {
-    const result = await processMessageThroughRouter(user.id, text, 'telegram')
-    let reply = result.assistantContent
-    if (result.sideEffects.length > 0) {
-      reply = result.sideEffects.join('\n') + '\n\n' + reply
-    }
-    await ctx.reply(reply.slice(0, 4000))
-  } catch (err: any) {
-    chargeQuota(user.id, -1, 'refund_opencode_error')
-    await ctx.reply(`Error: ${err.message}`)
-  }
-}
-
-function parseReminderText(text: string): { title: string; remindAt: Date } | null {
-  const tz = env.DEFAULT_TIMEZONE
-  const now = new Date()
-
-  // /remind 2026-06-04 10:00 write Ivan about contract
-  const fullDateMatch = text.match(/^(\d{4}-\d{2}-\d{2})\s+(\d{1,2}:\d{2})\s+(.+)$/)
-  if (fullDateMatch) {
-    const date = new Date(`${fullDateMatch[1]}T${fullDateMatch[2]}:00`)
-    if (!isNaN(date.getTime())) {
-      return { remindAt: date, title: fullDateMatch[3] }
-    }
-  }
-
-  // /remind tomorrow 10:00 write Ivan about contract
-  const tomorrowMatch = text.match(/^tomorrow\s+(\d{1,2}:\d{2})\s+(.+)$/i)
-  if (tomorrowMatch) {
-    const tomorrow = new Date(now)
-    tomorrow.setDate(tomorrow.getDate() + 1)
-    const [h, m] = tomorrowMatch[1].split(':').map(Number)
-    tomorrow.setHours(h, m, 0, 0)
-    return { remindAt: tomorrow, title: tomorrowMatch[2] }
-  }
-
-  // /remind today 18:30 check report
-  const todayMatch = text.match(/^today\s+(\d{1,2}:\d{2})\s+(.+)$/i)
-  if (todayMatch) {
-    const date = new Date(now)
-    const [h, m] = todayMatch[1].split(':').map(Number)
-    date.setHours(h, m, 0, 0)
-    return { remindAt: date, title: todayMatch[2] }
-  }
-
-  // /remind in 30m call back
-  const inMinutesMatch = text.match(/^in\s+(\d+)m\s+(.+)$/i)
-  if (inMinutesMatch) {
-    const date = new Date(now.getTime() + parseInt(inMinutesMatch[1]) * 60_000)
-    return { remindAt: date, title: inMinutesMatch[2] }
-  }
-
-  // /remind in 2h prepare meeting plan
-  const inHoursMatch = text.match(/^in\s+(\d+)h\s+(.+)$/i)
-  if (inHoursMatch) {
-    const date = new Date(now.getTime() + parseInt(inHoursMatch[1]) * 3600_000)
-    return { remindAt: date, title: inHoursMatch[2] }
-  }
-
-  return null
 }
 
 export function startTelegramBot(): Telegraf | null {
@@ -194,6 +98,17 @@ export function startTelegramBot(): Telegraf | null {
     await ctx.reply(`Linked to ${user?.email ?? 'account'}. You can now chat!`)
   })
 
+  bot.command('help', async (ctx) => {
+    await ctx.reply(
+      'MultiOpenCodeAgent\n\n' +
+      'Send normal text or voice. The manager agent will interpret the request using AGENTS.md and OpenCode skills.\n\n' +
+      'Service commands:\n' +
+      '/login <code> — link your account\n' +
+      '/help — show this help'
+    )
+  })
+
+  // Service commands (hidden from help, useful for debugging)
   bot.command('sessions', async (ctx) => {
     const user = getUserByTelegramId(String(ctx.from?.id))
     if (!user) { await ctx.reply('Not linked. Use /login <code>'); return }
@@ -258,102 +173,6 @@ export function startTelegramBot(): Telegraf | null {
     await ctx.reply(`Created session: ${title}`)
   })
 
-  bot.command('main', async (ctx) => {
-    const user = getUserByTelegramId(String(ctx.from?.id))
-    if (!user) { await ctx.reply('Not linked.'); return }
-
-    const session = getMainSession(user.id)
-    if (session) {
-      await ctx.reply(`Main session: ${session.title || 'Untitled'}`)
-    } else {
-      await ctx.reply('No main session set.')
-    }
-  })
-
-  bot.command('limits', async (ctx) => {
-    const user = getUserByTelegramId(String(ctx.from?.id))
-    if (!user) { await ctx.reply('Not linked.'); return }
-
-    const balance = getBalance(user.id)
-    await ctx.reply(`Balance: ${balance} messages`)
-  })
-
-  bot.command('remind', async (ctx) => {
-    const user = getUserByTelegramId(String(ctx.from?.id))
-    if (!user) { await ctx.reply('Not linked.'); return }
-
-    const text = ctx.message?.text?.split(' ').slice(1).join(' ')
-    if (!text) {
-      await ctx.reply(
-        'Usage:\n' +
-        '/remind 2026-06-04 10:00 write Ivan about contract\n' +
-        '/remind tomorrow 10:00 write Ivan about contract\n' +
-        '/remind today 18:30 check report\n' +
-        '/remind in 30m call back\n' +
-        '/remind in 2h prepare meeting plan'
-      )
-      return
-    }
-
-    const parsed = parseReminderText(text)
-    if (!parsed) {
-      await ctx.reply(
-        'Could not parse reminder. Supported formats:\n' +
-        '/remind 2026-06-04 10:00 <title>\n' +
-        '/remind tomorrow 10:00 <title>\n' +
-        '/remind today 18:30 <title>\n' +
-        '/remind in 30m <title>\n' +
-        '/remind in 2h <title>'
-      )
-      return
-    }
-
-    const id = uuid()
-    const now = new Date().toISOString()
-
-    db.insert(reminders).values({
-      id,
-      userId: user.id,
-      title: parsed.title,
-      remindAt: parsed.remindAt.toISOString(),
-      timezone: env.DEFAULT_TIMEZONE,
-      channel: 'telegram',
-      status: 'scheduled',
-      createdAt: now,
-    }).run()
-
-    await ctx.reply(
-      `Reminder created:\n` +
-      `  Title: ${parsed.title}\n` +
-      `  At: ${parsed.remindAt.toISOString()}\n` +
-      `  Timezone: ${env.DEFAULT_TIMEZONE}\n` +
-      `  Channel: telegram`
-    )
-  })
-
-  bot.command('help', async (ctx) => {
-    await ctx.reply(
-      'MultiOpenCodeAgent Commands:\n\n' +
-      '/login <code> — Link your account\n' +
-      '/sessions — List your sessions\n' +
-      '/new <title> — Create new session\n' +
-      '/use <number> — Switch session by number\n' +
-      '/main — Show main session\n' +
-      '/limits — Show quota balance\n' +
-      '/remind <when> <text> — Create reminder\n' +
-      '/calendar — Today\'s events\n' +
-      '/daily — Daily plan from calendar, reminders, memory\n' +
-      '/find <query> — Search prior messages and memory\n' +
-      '/meeting <notes> — Extract brief from meeting notes\n' +
-      '/voice <text> — Extract actions from voice transcript\n' +
-      '/files [path] — List your files\n' +
-      '/sendfile <path> — Get a file\n' +
-      '/settings — Show your settings\n' +
-      '/help — This message\n\n' +
-      'Send any text to chat with your agent.'
-    )
-  })
-
   bot.command('use', async (ctx) => {
     const user = getUserByTelegramId(String(ctx.from?.id))
     if (!user) { await ctx.reply('Not linked.'); return }
@@ -377,140 +196,27 @@ export function startTelegramBot(): Telegraf | null {
     await ctx.reply(`Switched to: ${list[num - 1].title || 'Untitled'}`)
   })
 
-  bot.command('calendar', async (ctx) => {
+  bot.command('main', async (ctx) => {
     const user = getUserByTelegramId(String(ctx.from?.id))
     if (!user) { await ctx.reply('Not linked.'); return }
 
-    const today = new Date().toISOString().split('T')[0]
-    const { calendarEvents } = await import('../db/schema.js')
-    const events = db.select().from(calendarEvents)
-      .where(eq(calendarEvents.userId, user.id))
+    const session = db.select().from(sessions)
+      .where(eq(sessions.userId, user.id))
       .all()
-      .filter(e => e.startsAt?.startsWith(today))
-
-    if (events.length === 0) {
-      await ctx.reply(`No events today (${today}).`)
-      return
+      .find(s => s.isMain && s.status === 'active')
+    if (session) {
+      await ctx.reply(`Main session: ${session.title || 'Untitled'}`)
+    } else {
+      await ctx.reply('No main session set.')
     }
-
-    const text = events.map(e =>
-      `${e.startsAt?.split('T')[1]?.slice(0, 5) ?? '??:??'} — ${e.title}${e.location ? ` @ ${e.location}` : ''}`
-    ).join('\n')
-    await ctx.reply(`Today (${today}):\n${text}`)
   })
 
-  bot.command('daily', async (ctx) => {
+  bot.command('limits', async (ctx) => {
     const user = getUserByTelegramId(String(ctx.from?.id))
     if (!user) { await ctx.reply('Not linked.'); return }
 
     const balance = getBalance(user.id)
-    if (balance <= 0) {
-      await ctx.reply('Quota exceeded. Contact admin for more.')
-      return
-    }
-
-    chargeQuota(user.id, 1, 'telegram_message')
-    try {
-      const result = await processMessageThroughRouter(user.id, 'план на день', 'telegram')
-      await ctx.reply(result.assistantContent.slice(0, 4000))
-    } catch (err: any) {
-      chargeQuota(user.id, -1, 'refund_opencode_error')
-      await ctx.reply(`Error: ${err.message}`)
-    }
-  })
-
-  bot.command('find', async (ctx) => {
-    const user = getUserByTelegramId(String(ctx.from?.id))
-    if (!user) { await ctx.reply('Not linked.'); return }
-
-    const query = ctx.message?.text?.split(' ').slice(1).join(' ').trim()
-    if (!query) {
-      await ctx.reply('Usage: /find <query>')
-      return
-    }
-
-    const ctx_data = buildFindContext(user.id, query)
-    if (ctx_data.messages.length === 0 && ctx_data.memory.length === 0) {
-      await ctx.reply(`No prior context matching "${query}".`)
-      return
-    }
-
-    const lines: string[] = [`Found ${ctx_data.messages.length} message(s), ${ctx_data.memory.length} memory item(s) for "${query}":\n`]
-    for (const m of ctx_data.messages.slice(0, 5)) {
-      const snippet = m.content.slice(0, 150).replace(/\n/g, ' ')
-      lines.push(`[${m.createdAt.split('T')[0]}] ${snippet}${m.content.length > 150 ? '…' : ''}`)
-    }
-    for (const m of ctx_data.memory.slice(0, 5)) {
-      lines.push(`[memory:${m.type}] ${m.content}`)
-    }
-    await ctx.reply(lines.join('\n').slice(0, 4000))
-  })
-
-  bot.command('meeting', async (ctx) => {
-    const user = getUserByTelegramId(String(ctx.from?.id))
-    if (!user) { await ctx.reply('Not linked.'); return }
-
-    const notes = ctx.message?.text?.split(' ').slice(1).join(' ').trim()
-    if (!notes) {
-      await ctx.reply('Usage: /meeting <paste meeting notes here>')
-      return
-    }
-    if (notes.length > 8000) {
-      await ctx.reply('Notes too long (max 8000 chars). Use Web UI for longer notes.')
-      return
-    }
-
-    const result = buildMeetingBrief(notes)
-    const lines: string[] = ['Meeting brief:\n']
-    if (result.decisions.length > 0) {
-      lines.push('Decisions:')
-      for (const d of result.decisions) lines.push(`• ${d}`)
-    }
-    if (result.actionItems.length > 0) {
-      lines.push('\nAction items:')
-      for (const a of result.actionItems) {
-        lines.push(`• ${a.owner ?? '?'}: ${a.task}${a.deadline ? ` (${a.deadline})` : ''}`)
-      }
-    }
-    if (result.risks.length > 0) {
-      lines.push('\nRisks:')
-      for (const r of result.risks) lines.push(`• ${r}`)
-    }
-    if (result.followUps.length > 0) {
-      lines.push('\nFollow-ups:')
-      for (const f of result.followUps) lines.push(`• ${f}`)
-    }
-    if (result.decisions.length === 0 && result.actionItems.length === 0 &&
-        result.risks.length === 0 && result.followUps.length === 0) {
-      lines.push('No explicit actions/decisions/risks detected. Sending to main session for analysis.')
-      await sendToSession(user, `/meeting\n\n${notes}`, ctx)
-      return
-    }
-    await ctx.reply(lines.join('\n').slice(0, 4000))
-  })
-
-  bot.command('voice', async (ctx) => {
-    const user = getUserByTelegramId(String(ctx.from?.id))
-    if (!user) { await ctx.reply('Not linked.'); return }
-
-    const text = ctx.message?.text?.split(' ').slice(1).join(' ').trim()
-    if (!text) {
-      await ctx.reply('Usage: /voice <transcript text>\nUse this after a voice message, or to summarize any spoken-style note.')
-      return
-    }
-
-    const result = buildVoiceActionSummary(text)
-    if (result.actions.length === 0) {
-      await ctx.reply('No action triggers detected in transcript. Send via main session for full analysis.')
-      return
-    }
-
-    const lines: string[] = ['Voice action summary:\n']
-    for (const a of result.actions) {
-      lines.push(`[${a.kind}] ${a.text}`)
-    }
-    lines.push('\nUse /remind to create a reminder from any of these.')
-    await ctx.reply(lines.join('\n').slice(0, 4000))
+    await ctx.reply(`Balance: ${balance} messages`)
   })
 
   bot.command('settings', async (ctx) => {
@@ -528,13 +234,29 @@ export function startTelegramBot(): Telegraf | null {
     )
   })
 
+  // All normal text goes to manager agent via action-router
   bot.on('text', async (ctx) => {
     const user = getUserByTelegramId(String(ctx.from?.id))
     if (!user) { await ctx.reply('Not linked. Use /login <code>'); return }
 
-    await sendToSession(user, ctx.message.text, ctx)
+    const balance = getBalance(user.id)
+    if (balance <= 0) {
+      await ctx.reply('Quota exceeded. Contact admin for more.')
+      return
+    }
+
+    chargeQuota(user.id, 1, 'telegram_message')
+
+    try {
+      const result = await processMessageThroughRouter(user.id, ctx.message.text, 'telegram')
+      await ctx.reply(result.assistantContent.slice(0, 4000))
+    } catch (err: any) {
+      chargeQuota(user.id, -1, 'refund_opencode_error')
+      await ctx.reply(`Error: ${err.message}`)
+    }
   })
 
+  // Voice -> STT -> manager agent
   bot.on('voice', async (ctx) => {
     const user = getUserByTelegramId(String(ctx.from?.id))
     if (!user) { await ctx.reply('Not linked.'); return }
@@ -563,126 +285,23 @@ export function startTelegramBot(): Telegraf | null {
       const transcript = result.text || '(no transcript)'
 
       await ctx.reply(`Transcript: ${transcript}`)
-      await sendToSession(user, transcript, ctx)
+
+      const balance = getBalance(user.id)
+      if (balance <= 0) {
+        await ctx.reply('Quota exceeded after transcription.')
+        return
+      }
+
+      chargeQuota(user.id, 1, 'telegram_message')
+      try {
+        const routerResult = await processMessageThroughRouter(user.id, transcript, 'telegram')
+        await ctx.reply(routerResult.assistantContent.slice(0, 4000))
+      } catch (err: any) {
+        chargeQuota(user.id, -1, 'refund_opencode_error')
+        await ctx.reply(`Error: ${err.message}`)
+      }
     } catch (err: any) {
       await ctx.reply(`Voice error: ${err.message}`)
-    }
-  })
-
-  // Receive documents
-  bot.on('document', async (ctx) => {
-    const user = getUserByTelegramId(String(ctx.from?.id))
-    if (!user) { await ctx.reply('Not linked.'); return }
-
-    const ws = getWorkspace(user.id)
-    if (!ws) { await ctx.reply('No workspace.'); return }
-
-    const doc = ctx.message?.document
-    if (!doc) return
-
-    if (doc.file_size && doc.file_size > 20 * 1024 * 1024) {
-      await ctx.reply('File too large (max 20 MB via Telegram). Upload via Web UI.')
-      return
-    }
-
-    try {
-      const filename = doc.file_name || `file_${Date.now()}`
-      if (filename.slice(filename.lastIndexOf('.')).toLowerCase() === '.exe' ||
-          ['.bat', '.cmd', '.scr', '.dll', '.sh'].includes(filename.slice(filename.lastIndexOf('.')).toLowerCase())) {
-        await ctx.reply('This file type is not allowed.')
-        return
-      }
-
-      const fileLink = await ctx.telegram.getFileLink(doc)
-      const response = await fetch(fileLink.toString(), proxyAgent ? { agent: proxyAgent } as any : undefined)
-      const buffer = Buffer.from(await response.arrayBuffer())
-
-      const filesDir = join(ws.path, 'files')
-      await mkdirAsync(filesDir, { recursive: true })
-      const filepath = join(filesDir, filename)
-      await writeFileAsync(filepath, buffer)
-
-      await ctx.reply(`Saved: ${filename} (${(buffer.length / 1024).toFixed(1)} KB)`)
-    } catch (err: any) {
-      await ctx.reply(`File error: ${err.message}`)
-    }
-  })
-
-  // Receive photos
-  bot.on('photo', async (ctx) => {
-    const user = getUserByTelegramId(String(ctx.from?.id))
-    if (!user) { await ctx.reply('Not linked.'); return }
-
-    const ws = getWorkspace(user.id)
-    if (!ws) { await ctx.reply('No workspace.'); return }
-
-    try {
-      const photos = ctx.message?.photo
-      if (!photos?.length) return
-      const largest = photos[photos.length - 1]
-
-      const fileLink = await ctx.telegram.getFileLink(largest)
-      const response = await fetch(fileLink.toString(), proxyAgent ? { agent: proxyAgent } as any : undefined)
-      const buffer = Buffer.from(await response.arrayBuffer())
-
-      const filesDir = join(ws.path, 'files')
-      await mkdirAsync(filesDir, { recursive: true })
-      const filename = `photo_${Date.now()}.jpg`
-      await writeFileAsync(join(filesDir, filename), buffer)
-
-      await ctx.reply(`Saved: ${filename} (${(buffer.length / 1024).toFixed(1)} KB)`)
-    } catch (err: any) {
-      await ctx.reply(`Photo error: ${err.message}`)
-    }
-  })
-
-  // /files [path] - list files
-  bot.command('files', async (ctx) => {
-    const user = getUserByTelegramId(String(ctx.from?.id))
-    if (!user) { await ctx.reply('Not linked.'); return }
-
-    const ws = getWorkspace(user.id)
-    if (!ws) { await ctx.reply('No workspace.'); return }
-
-    const relPath = ctx.message?.text?.split(' ').slice(1).join(' ') ?? ''
-    const dir = join(ws.path, 'files', relPath)
-
-    try {
-      const entries = await readdirAsync(dir, { withFileTypes: true })
-      if (entries.length === 0) {
-        await ctx.reply(`Empty directory: ${relPath || '/'}`)
-        return
-      }
-      const text = entries
-        .filter(e => !e.name.startsWith('.'))
-        .map((e, i) => `${i + 1}. ${e.name}${e.isDirectory() ? '/' : ''}`)
-        .join('\n')
-      await ctx.reply(`Files in /${relPath}:\n${text}`)
-    } catch {
-      await ctx.reply('Directory not found or empty.')
-    }
-  })
-
-  // /sendfile <path>
-  bot.command('sendfile', async (ctx) => {
-    const user = getUserByTelegramId(String(ctx.from?.id))
-    if (!user) { await ctx.reply('Not linked.'); return }
-
-    const ws = getWorkspace(user.id)
-    if (!ws) { await ctx.reply('No workspace.'); return }
-
-    const relPath = ctx.message?.text?.split(' ').slice(1).join(' ')
-    if (!relPath) { await ctx.reply('Usage: /sendfile <path>'); return }
-
-    const resolved = resolve(ws.path, 'files', relPath)
-    assertInsideWorkspace(ws.path, resolved)
-
-    try {
-      const st = await statAsync(resolved)
-      if (!st.isFile()) { await ctx.reply('Not a file.'); return }
-      await ctx.replyWithDocument({ source: resolved, filename: relPath.split('/').pop() })
-    } catch {
-      await ctx.reply('File not found.')
     }
   })
 

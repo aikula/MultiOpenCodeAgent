@@ -39,10 +39,15 @@ export function Layout({ children }: { children: React.ReactNode }) {
             </button>
           ))}
         </div>
-        <div className="p-4 border-t border-gray-200">
+        <div className="p-4 border-t border-gray-200 space-y-2">
           <button onClick={logout} className="text-sm text-gray-500 hover:text-gray-700">
-            Logout
+            Log out
           </button>
+          <div>
+            <button onClick={() => navigate('/settings')} className="text-xs text-red-400 hover:text-red-600">
+              Delete profile...
+            </button>
+          </div>
         </div>
       </nav>
       <main className="flex-1 overflow-auto">

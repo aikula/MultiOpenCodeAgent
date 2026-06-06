@@ -34,11 +34,12 @@ export function AdminPage() {
   const [users, setUsers] = useState<User[]>([])
   const [invites, setInvites] = useState<Invite[]>([])
   const [mcpServers, setMcpServers] = useState<McpServer[]>([])
+  const [diagnostics, setDiagnostics] = useState<Record<string, any> | null>(null)
   const [newInviteLabel, setNewInviteLabel] = useState('')
   const [newInviteMaxUses, setNewInviteMaxUses] = useState('1')
   const [newInviteExpires, setNewInviteExpires] = useState('')
   const [lastCreatedCode, setLastCreatedCode] = useState('')
-  const [tab, setTab] = useState<'users' | 'invites' | 'mcp' | 'catalogs' | 'audit'>('users')
+  const [tab, setTab] = useState<'users' | 'invites' | 'mcp' | 'diagnostics' | 'catalogs' | 'audit'>('users')
   const [quotaAmount, setQuotaAmount] = useState('10')
   const [catalogName, setCatalogName] = useState('')
   const [catalogUrl, setCatalogUrl] = useState('')
@@ -102,10 +103,10 @@ export function AdminPage() {
       <h1 className="text-2xl font-bold mb-6">Admin Panel</h1>
 
       <div className="flex gap-2 mb-6 flex-wrap">
-        {(['users', 'invites', 'mcp', 'catalogs', 'audit'] as const).map(t => (
+        {(['users', 'invites', 'mcp', 'diagnostics', 'catalogs', 'audit'] as const).map(t => (
           <button key={t} onClick={() => setTab(t)}
             className={`px-4 py-2 rounded text-sm ${tab === t ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-700'}`}>
-            {t === 'mcp' ? 'MCP Status' : t.charAt(0).toUpperCase() + t.slice(1)}
+            {t === 'mcp' ? 'MCP Status' : t === 'diagnostics' ? 'Diagnostics' : t.charAt(0).toUpperCase() + t.slice(1)}
           </button>
         ))}
       </div>
@@ -233,6 +234,19 @@ export function AdminPage() {
                 </div>
               ))}
             </div>
+          )}
+        </div>
+      )}
+
+      {tab === 'diagnostics' && (
+        <div>
+          <button onClick={async () => {
+            try { setDiagnostics(await api.adminDiagnostics()) } catch { setDiagnostics({ error: 'Failed to run diagnostics' }) }
+          }} className="bg-blue-600 text-white rounded px-4 py-2 text-sm mb-4">Run diagnostics</button>
+          {diagnostics && (
+            <pre className="bg-gray-50 rounded p-4 text-xs overflow-auto max-h-[32rem]">
+              {JSON.stringify(diagnostics, null, 2)}
+            </pre>
           )}
         </div>
       )}

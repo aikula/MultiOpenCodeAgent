@@ -138,6 +138,9 @@ export const api = {
   // MCP status
   getMcpStatus: () => request('/opencode/mcp-status'),
 
+  // Diagnostics
+  adminDiagnostics: () => request('/admin/diagnostics'),
+
   // Marketplace
   listMarketplaceSkills: () => request('/marketplace/skills'),
   listInstalledSkills: () => request('/marketplace/installed'),

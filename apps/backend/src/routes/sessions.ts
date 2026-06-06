@@ -108,7 +108,6 @@ export async function sessionRoutes(app: FastifyInstance) {
         assistantMessage: result.assistantMsgId,
         content: result.assistantContent,
         sideEffects: result.sideEffects,
-        reminderCreated: result.reminderCreated,
       }
     } catch (err: any) {
       chargeQuota(request.user.userId, -1, 'refund_opencode_error')
