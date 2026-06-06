@@ -1,6 +1,6 @@
 import { eq } from 'drizzle-orm'
 import { v4 as uuid } from 'uuid'
-import { join } from 'path'
+import { join, resolve } from 'path'
 import { db } from '../db/index.js'
 import { workspaces } from '../db/schema.js'
 import { env } from '../env.js'
@@ -79,11 +79,12 @@ export function getWorkspace(userId: string) {
 }
 
 export function assertInsideWorkspace(workspacePath: string, candidatePath: string) {
+  const wsResolved = resolve(workspacePath)
   const resolved = candidatePath.startsWith('/')
-    ? candidatePath
-    : join(workspacePath, candidatePath)
+    ? resolve(candidatePath)
+    : resolve(workspacePath, candidatePath)
 
-  if (!resolved.startsWith(workspacePath)) {
+  if (resolved !== wsResolved && !resolved.startsWith(wsResolved + '/')) {
     throw new Error('Path escapes workspace')
   }
 }

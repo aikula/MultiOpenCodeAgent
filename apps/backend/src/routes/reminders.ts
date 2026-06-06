@@ -39,13 +39,13 @@ export async function reminderRoutes(app: FastifyInstance) {
 
   app.patch('/api/reminders/:id', {
     preHandler: [app.authenticate],
-  }, async (request) => {
+  }, async (request, reply) => {
     const { id } = request.params as { id: string }
     const body = request.body as { title?: string; description?: string; status?: string }
 
     const existing = db.select().from(reminders).where(eq(reminders.id, id)).get()
     if (!existing || existing.userId !== request.user.userId) {
-      return { error: 'Not found' }
+      return reply.status(404).send({ error: 'Not found' })
     }
 
     const updates: Record<string, unknown> = {}
@@ -63,11 +63,11 @@ export async function reminderRoutes(app: FastifyInstance) {
 
   app.delete('/api/reminders/:id', {
     preHandler: [app.authenticate],
-  }, async (request) => {
+  }, async (request, reply) => {
     const { id } = request.params as { id: string }
     const existing = db.select().from(reminders).where(eq(reminders.id, id)).get()
     if (!existing || existing.userId !== request.user.userId) {
-      return { error: 'Not found' }
+      return reply.status(404).send({ error: 'Not found' })
     }
 
     db.update(reminders)

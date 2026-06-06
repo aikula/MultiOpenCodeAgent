@@ -32,7 +32,7 @@ function AppRoutes() {
       <Route path="/skills" element={<ProtectedRoute><SkillsPage /></ProtectedRoute>} />
       <Route path="/files" element={<ProtectedRoute><FilesPage /></ProtectedRoute>} />
       <Route path="/settings" element={<ProtectedRoute><SettingsPage /></ProtectedRoute>} />
-      <Route path="/admin" element={<ProtectedRoute><AdminPage /></ProtectedRoute>} />
+      <Route path="/admin" element={<ProtectedRoute>{user?.role === 'admin' ? <AdminPage /> : <Navigate to="/" />}</ProtectedRoute>} />
     </Routes>
   )
 }

@@ -197,7 +197,9 @@ export const api = {
       body: formData,
     })
     if (res.status === 401) { localStorage.removeItem('token'); window.location.href = '/login' }
-    return res.json()
+    const data = await res.json()
+    if (!res.ok) throw new ApiError(data?.error || `HTTP ${res.status}`, res.status, data?.details)
+    return data
   },
 
   downloadFile: async (filePath: string) => {
@@ -206,6 +208,7 @@ export const api = {
       headers: token ? { 'Authorization': `Bearer ${token}` } : {},
     })
     if (res.status === 401) { localStorage.removeItem('token'); window.location.href = '/login' }
+    if (!res.ok) throw new ApiError(`Download failed: ${res.status}`, res.status)
     const blob = await res.blob()
     const url = URL.createObjectURL(blob)
     const a = document.createElement('a')
@@ -220,6 +223,8 @@ export const api = {
     const res = await fetch(`${BASE}/files/download?path=${encodeURIComponent(filePath)}&mode=view`, {
       headers: token ? { 'Authorization': `Bearer ${token}` } : {},
     })
+    if (res.status === 401) { localStorage.removeItem('token'); window.location.href = '/login' }
+    if (!res.ok) throw new ApiError(`View failed: ${res.status}`, res.status)
     return res.text()
   },
 

@@ -20,7 +20,9 @@ function sanitizeFilename(name: string): string {
 }
 
 function isBlockedExtension(filename: string): boolean {
-  const ext = filename.slice(filename.lastIndexOf('.')).toLowerCase()
+  const dotIndex = filename.lastIndexOf('.')
+  if (dotIndex <= 0) return false
+  const ext = filename.slice(dotIndex).toLowerCase()
   return BLOCKED_EXTENSIONS.has(ext)
 }
 

@@ -1,11 +1,25 @@
-import { useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useState, useEffect } from 'react'
+import { useNavigate, useLocation } from 'react-router-dom'
 import { useAuth } from '../hooks/useAuth'
 
 export function Layout({ children }: { children: React.ReactNode }) {
   const { user, logout } = useAuth()
   const navigate = useNavigate()
+  const location = useLocation()
   const [nav, setNav] = useState('chat')
+
+  useEffect(() => {
+    const match = [
+      { id: 'chat', path: '/' },
+      { id: 'calendar', path: '/calendar' },
+      { id: 'reminders', path: '/reminders' },
+      { id: 'skills', path: '/skills' },
+      { id: 'files', path: '/files' },
+      { id: 'settings', path: '/settings' },
+      { id: 'admin', path: '/admin' },
+    ].find(l => l.path === location.pathname)
+    if (match) setNav(match.id)
+  }, [location.pathname])
 
   if (!user) return <>{children}</>
 

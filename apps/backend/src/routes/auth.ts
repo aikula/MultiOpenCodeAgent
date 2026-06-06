@@ -15,12 +15,14 @@ import { env } from '../env.js'
 const loginCodes = new Map<string, { userId: string; expiresAt: number }>()
 
 export function getLoginCode(userId: string): string {
-  // Remove old codes for this user
+  // Purge expired codes across all users
+  const now = Date.now()
   for (const [code, data] of loginCodes) {
-    if (data.userId === userId) loginCodes.delete(code)
+    if (now > data.expiresAt) loginCodes.delete(code)
+    else if (data.userId === userId) loginCodes.delete(code)
   }
   const code = randomBytes(4).toString('hex')
-  loginCodes.set(code, { userId, expiresAt: Date.now() + 10 * 60 * 1000 })
+  loginCodes.set(code, { userId, expiresAt: now + 10 * 60 * 1000 })
   return code
 }
 

@@ -40,17 +40,23 @@ export async function calendarRoutes(app: FastifyInstance) {
 
   app.patch('/api/calendar/events/:id', {
     preHandler: [app.authenticate],
-  }, async (request) => {
+  }, async (request, reply) => {
     const { id } = request.params as { id: string }
-    const body = request.body as Record<string, any>
+    const raw = request.body as Record<string, any>
 
     const existing = db.select().from(calendarEvents).where(eq(calendarEvents.id, id)).get()
     if (!existing || existing.userId !== request.user.userId) {
-      return { error: 'Not found' }
+      return reply.status(404).send({ error: 'Not found' })
+    }
+
+    const allowed = ['title', 'startsAt', 'endsAt', 'location', 'description']
+    const updates: Record<string, any> = {}
+    for (const key of allowed) {
+      if (raw[key] !== undefined) updates[key] = raw[key]
     }
 
     db.update(calendarEvents)
-      .set(body)
+      .set(updates)
       .where(eq(calendarEvents.id, id))
       .run()
 
