@@ -1,5 +1,5 @@
 import type { FastifyInstance } from 'fastify'
-import { eq } from 'drizzle-orm'
+import { eq, sql } from 'drizzle-orm'
 import { v4 as uuid } from 'uuid'
 import { z } from 'zod'
 import { db } from '../db/index.js'
@@ -281,11 +281,11 @@ export async function adminRoutes(app: FastifyInstance) {
     }
 
     result.checks.database = {
-      users: db.select().from(users).all().length,
-      sessions: db.select().from(sessions).all().length,
-      reminders: db.select().from(reminders).all().length,
-      calendarEvents: db.select().from(calendarEvents).all().length,
-      memoryItems: db.select().from(memoryItems).all().length,
+      users: db.select({ count: sql<number>`count(*)` }).from(users).get()!.count,
+      sessions: db.select({ count: sql<number>`count(*)` }).from(sessions).get()!.count,
+      reminders: db.select({ count: sql<number>`count(*)` }).from(reminders).get()!.count,
+      calendarEvents: db.select({ count: sql<number>`count(*)` }).from(calendarEvents).get()!.count,
+      memoryItems: db.select({ count: sql<number>`count(*)` }).from(memoryItems).get()!.count,
     }
 
     return result

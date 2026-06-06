@@ -44,10 +44,11 @@ export function SkillsPage() {
       setSuccessMsg(`Skill "${newSlug}" created`)
       load()
     } catch (e: any) {
-      setError(e.message || 'Failed to create skill')
-      if (e instanceof ApiError && (e as any).details) {
-        const details = (e as any).details as Array<{ message: string }>
+      if (e instanceof ApiError && e.details) {
+        const details = e.details as Array<{ message: string }>
         setError(details.map(d => d.message).join('; '))
+      } else {
+        setError(e.message || 'Failed to create skill')
       }
     }
   }
@@ -70,10 +71,11 @@ export function SkillsPage() {
       setEditing(null)
       setEditContent('')
     } catch (e: any) {
-      setError(e.message || 'Failed to update skill')
-      if (e instanceof ApiError && (e as any).details) {
-        const details = (e as any).details as Array<{ message: string }>
+      if (e instanceof ApiError && e.details) {
+        const details = e.details as Array<{ message: string }>
         setError(details.map(d => d.message).join('; '))
+      } else {
+        setError(e.message || 'Failed to update skill')
       }
     }
   }

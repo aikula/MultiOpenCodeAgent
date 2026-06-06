@@ -6,9 +6,11 @@ function getToken(): string | null {
 
 export class ApiError extends Error {
   status: number
-  constructor(message: string, status: number) {
+  details?: any
+  constructor(message: string, status: number, details?: any) {
     super(message)
     this.status = status
+    this.details = details
   }
 }
 
@@ -35,7 +37,7 @@ async function request(path: string, options: RequestInit = {}) {
       localStorage.removeItem('token')
       window.location.href = '/login'
     }
-    throw new ApiError(message, res.status)
+    throw new ApiError(message, res.status, data?.details)
   }
 
   return data
@@ -97,7 +99,9 @@ export const api = {
       body: formData,
     })
     if (res.status === 401) { localStorage.removeItem('token'); window.location.href = '/login' }
-    return res.json()
+    const data = await res.json()
+    if (!res.ok) throw new ApiError(data?.error || `HTTP ${res.status}`, res.status, data?.details)
+    return data
   },
   adminUploadSkillArchive: async (file: File, scope: string = 'global', targetUserId?: string) => {
     const token = getToken()
@@ -111,7 +115,9 @@ export const api = {
       body: formData,
     })
     if (res.status === 401) { localStorage.removeItem('token'); window.location.href = '/login' }
-    return res.json()
+    const data = await res.json()
+    if (!res.ok) throw new ApiError(data?.error || `HTTP ${res.status}`, res.status, data?.details)
+    return data
   },
   adminSkillStartupCheck: () => request('/admin/skills/startup-check'),
 
